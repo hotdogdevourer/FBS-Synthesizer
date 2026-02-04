@@ -7,3 +7,5 @@ To use, do: pip install tqdm
 Or not if you already have the library.
 
 Please note that it's made for Windows-style file paths, so you may need to tweak it when trying to run.
+
+This has been barely debugged, so bugs may/will occur.
