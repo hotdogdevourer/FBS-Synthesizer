@@ -1,6 +1,6 @@
 # Formant-based speech synthesis in Python 3.11.0
 
-This is a random thing i worked on, it's a formant speech synthesis script in python
+This is a random thing i worked on, it's a formant speech synthesis script in python.
 
 To use, do: pip install tqdm
 
