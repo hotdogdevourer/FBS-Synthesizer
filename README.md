@@ -117,7 +117,7 @@ N bytes: voice name UTF-8
 
 **Text to PHX + WAV**
 ```python
-from synthesizer import VOICE_REGISTRY, FormantSynthesizer, text_to_phonemes, phonemes_to_spec, save_wav
+from main import VOICE_REGISTRY, FormantSynthesizer, text_to_phonemes, phonemes_to_spec, save_wav
 
 text = "hello world"
 phonemes = text_to_phonemes(text)
@@ -130,7 +130,7 @@ save_wav("hello_world.wav", audio)
 Load custom voice
 
 ```python
-from synthesizer import Voice
+from main import Voice
 
 voice = Voice.load("voices/custom_voice.json")
 VOICE_REGISTRY.voices[voice.name] = voice
