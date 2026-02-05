@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import numpy as np
 import scipy.signal as sig
 import wave
@@ -9,7 +8,7 @@ import json
 import argparse
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List
 
 smp = 48000
 VOICES_DIR = Path("voices")
@@ -125,234 +124,24 @@ class VoiceRegistry:
 
 VOICE_REGISTRY = VoiceRegistry()
 
-def ipa_to_phoneme_sequence(ipa_text: str, for_spec: bool = False, voice: Voice = None) -> Union[List[str], List[Dict]]:
-    """
-    Convert IPA text to phoneme sequence with stress handling.
-    for_spec=True: returns spec dicts with stress-modified duration/pitch
-    for_spec=False: returns simple phoneme list (legacy format)
-    American English IPA mapping with stress support (ˈ = primary, ˌ = secondary)
-    """
-    if voice is None:
-        voice = VOICE_REGISTRY.current_voice
-    
-    # Normalize input: remove brackets/spaces, keep stress markers
-    text = ipa_text.strip().replace('/', '').replace('[', '').replace(']', '')
-    text = re.sub(r'\s+', '', text)  # Remove all spaces
-    
-    # IPA patterns ordered longest-first for proper tokenization
-    patterns = [
-        ('tʃ', 'CH'),
-        ('dʒ', 'JH'),
-        ('aɪ', 'EY'),   # /aɪ/ → EY approximation (best available)
-        ('aʊ', 'OW'),   # /aʊ/ → OW approximation
-        ('ɔɪ', 'OY_SEQ'), # Will expand to AO + IH sequence
-        ('ʃ', 'SH'),
-        ('ʒ', 'ZH'),
-        ('θ', 'TH'),
-        ('ð', 'DH'),
-        ('ŋ', 'NG'),
-        ('ˈ', 'PRIMARY_STRESS'),
-        ('ˌ', 'SECONDARY_STRESS'),
-        ('iː', 'IY'),
-        ('uː', 'UW'),
-        ('ɑː', 'AA'),
-        ('ɔː', 'AO'),
-        ('ɝ', 'ER'),
-        ('ɚ', 'ER'),
-        ('i', 'IY'),
-        ('ɪ', 'IH'),
-        ('eɪ', 'EY'),
-        ('e', 'EY'),
-        ('ɛ', 'EH'),
-        ('æ', 'AE'),
-        ('ɑ', 'AA'),
-        ('ɔ', 'AO'),
-        ('oʊ', 'OW'),
-        ('o', 'OW'),
-        ('ʊ', 'UH'),
-        ('u', 'UW'),
-        ('ʌ', 'AH'),
-        ('ə', 'AH'),
-        ('ɜ', 'ER'),
-        ('p', 'P'),
-        ('b', 'B'),
-        ('t', 'T'),
-        ('d', 'D'),
-        ('k', 'K'),
-        ('g', 'G'),
-        ('m', 'M'),
-        ('n', 'N'),
-        ('l', 'L'),
-        ('r', 'R'),
-        ('f', 'F'),
-        ('v', 'V'),
-        ('s', 'S'),
-        ('z', 'Z'),
-        ('h', 'HH'),
-        ('w', 'W'),
-        ('j', 'Y'),
-    ]
-    
-    i = 0
-    phonemes: List[Tuple[str, int]] = []  # (phoneme, stress_level: 0=none,1=secondary,2=primary)
-    pending_stress = 0
-    
-    while i < len(text):
-        matched = False
-        for pattern, mapping in patterns:
-            if text.startswith(pattern, i):
-                if mapping == 'PRIMARY_STRESS':
-                    pending_stress = 2
-                elif mapping == 'SECONDARY_STRESS':
-                    pending_stress = 1
-                elif mapping == 'OY_SEQ':
-                    # Expand /ɔɪ/ to AO (stressed) + IH (unstressed)
-                    phonemes.append(('AO', pending_stress if pending_stress else 0))
-                    phonemes.append(('IH', 0))
-                    pending_stress = 0
-                elif mapping in VOWELS or mapping == 'ER':
-                    phonemes.append((mapping, pending_stress))
-                    pending_stress = 0
-                else:
-                    phonemes.append((mapping, 0))
-                i += len(pattern)
-                matched = True
-                break
-        if not matched:
-            print(f"Warning: Unknown IPA character '{text[i]}' at position {i} - skipping")
-            i += 1
-    
-    # Add SIL boundaries
-    phonemes = [('SIL', 0)] + phonemes + [('SIL', 0)]
-    
-    if not for_spec:
-        return [ph for ph, _ in phonemes]
-    
-    # Generate spec with stress-modified parameters
-    specs = []
-    for ph, stress in phonemes:
-        base = voice.get_phoneme_data(ph)
-        duration = base.get('length', 0.14)
-        pitch_base = base.get('f4', 115.0) or 115.0
-        
-        # Apply stress modifiers (affects duration AND pitch contour)
-        if stress == 2:  # Primary stress
-            duration = min(duration * 1.55, 0.38)
-            pitch_contour = [pitch_base * 1.42, pitch_base * 1.30]
-        elif stress == 1:  # Secondary stress
-            duration = min(duration * 1.30, 0.32)
-            pitch_contour = [pitch_base * 1.18]
-        else:  # Unstressed
-            if ph == 'AH':  # Schwa reduction
-                duration *= 0.82
-            pitch_contour = [pitch_base * 0.88]
-        
-        f1 = base.get('f1', 0.0) or 0.0
-        f2 = base.get('f2', 0.0) or 0.0
-        f3 = base.get('f3', 0.0) or 0.0
-        
-        specs.append({
-            'phoneme': ph,
-            'duration': duration,
-            'pitch_contour': pitch_contour,
-            'num_pitch_points': len(pitch_contour),
-            'f1': f1,
-            'f2': f2,
-            'f3': f3,
-            'voiced': ph not in {'SIL','B','D','G','P','T','K','F','S','SH','TH','HH','CH'}
-        })
-    
-    return specs
-
-def specs_to_readable(specs: List[Dict]) -> str:
-    lines = ["# PHONEME DURATION P0 [P1 P2 ...]  (Stress affects duration/pitch)"]
-    for spec in specs:
-        pitches = ' '.join(f"{p:.1f}" for p in spec['pitch_contour'])
-        lines.append(f"{spec['phoneme']:4s} {spec['duration']:6.3f} {pitches}")
-    return '\n'.join(lines)
-
-def menu_ipa_to_legacy_phoneme():
-    print("\n(LEGACY) IPA to Phoneme")
-    print("Convert American English IPA to simple phoneme list (for .phn format)")
-    print("Stress markers (ˈˌ) are IGNORED in legacy output")
-    print("Example IPA: hɛˈloʊ  →  HH EH L OW")
-    
-    choice = input("\nInput method: (1) file or (2) manual? [2]: ").strip() or '2'
-    if choice == '1':
-        filename = input("Enter IPA file (.txt): ").strip()
-        if not os.path.exists(filename):
-            print(f"Error: File not found: {filename}")
-            return
-        with open(filename, 'r', encoding='utf-8') as f:
-            ipa_text = f.read().strip()
-    else:
-        print("\nEnter IPA text (e.g., hɛˈloʊ wɝld):")
-        ipa_text = input("> ").strip()
-        if not ipa_text:
-            print("Error: Empty input!")
-            return
-    
-    phonemes = ipa_to_phoneme_sequence(ipa_text, for_spec=False)
-    
-    if not phonemes or len(phonemes) <= 2:  # Only SIL boundaries
-        print("Error: No valid phonemes parsed from IPA!")
-        return
-    
-    print(f"\nConverted {len(phonemes)-2} phonemes (excluding SIL boundaries):")
-    print("   " + " ".join(phonemes))
-    
-    save = input("\nSave to text file? (y/n) [n]: ").strip().lower()
-    if save == 'y':
-        default = "ipa_output.txt"
-        fname = input(f"Filename [{default}]: ").strip() or default
-        if not fname.endswith('.txt'):
-            fname += '.txt'
-        with open(fname, 'w', encoding='utf-8') as f:
-            f.write(" ".join(phonemes))
-        print(f"Saved phoneme sequence to: {fname}")
-        print("Use menu option 1 to convert this to .phn bytecode")
-
-def menu_ipa_to_phoneme_spec():
-    print("\nIPA to Phoneme Spec")
-    print("Convert American English IPA to parameterized spec with STRESS handling")
-    print("Primary stress (ˈ) → longer duration + rising pitch contour")
-    print("Secondary stress (ˌ) → moderate duration + elevated pitch")
-    print("Example IPA: ˈkʌmˌpjuːtɚ  →  stressed K AH M ... with pitch contours")
-    
-    choice = input("\nInput method: (1) file or (2) manual? [2]: ").strip() or '2'
-    if choice == '1':
-        filename = input("Enter IPA file (.txt): ").strip()
-        if not os.path.exists(filename):
-            print(f"Error: File not found: {filename}")
-            return
-        with open(filename, 'r', encoding='utf-8') as f:
-            ipa_text = f.read().strip()
-    else:
-        print("\nEnter IPA text with stress markers (e.g., hɛˈloʊ ˈwɝld):")
-        ipa_text = input("> ").strip()
-        if not ipa_text:
-            print("Error: Empty input!")
-            return
-    
-    specs = ipa_to_phoneme_sequence(ipa_text, for_spec=True, voice=VOICE_REGISTRY.current_voice)
-    
-    if not specs or len(specs) <= 2:
-        print("Error: No valid phonemes parsed from IPA!")
-        return
-    
-    print(f"\nGenerated {len(specs)-2} parameterized phonemes (excluding SIL):")
-    print(specs_to_readable(specs))
-    
-    save = input("\nSave spec to text file? (y/n) [y]: ").strip().lower() or 'y'
-    if save == 'y':
-        default = "ipa_spec.txt"
-        fname = input(f"Filename [{default}]: ").strip() or default
-        if not fname.endswith('.txt'):
-            fname += '.txt'
-        with open(fname, 'w', encoding='utf-8') as f:
-            f.write(specs_to_readable(specs))
-        print(f"Saved spec to: {fname}")
-        print("Use menu option 3 to convert this to .phx bytecode")
+WORD_MAP = {
+    'hello': ['HH', 'EH', 'L', 'AO', 'OW'], 'world': ['W', 'ER', 'L', 'D'], 'test': ['T', 'EH', 'S', 'T'],
+    'one': ['W', 'AH', 'N'], 'two': ['T', 'UW'], 'this': ['DH', 'IH', 'S'], 'is': ['IH', 'S'],
+    'text': ['T', 'AE', 'K', 'S', 'T'], 'a': ['AH'], 'three': ['TH', 'R', 'IY'], 'four': ['F', 'AO', 'R'],
+    'five': ['F', 'AA', 'EY', 'V'], 'six': ['S', 'IH', 'K', 'S'], 'seven': ['S', 'EH', 'V', 'EH', 'N'],
+    'eight': ['EY', 'T'], 'nine': ['N', 'AA', 'EY', 'N'], 'ten': ['T', 'EH', 'N'],
+    'robot': ['R', 'OW', 'B', 'AH', 'T'], 'voice': ['V', 'AO', 'Y', 'S'], 'i': ['AY'],
+    'am': ['AH', 'M'], 'and': ['AH', 'N', 'D'], 'single': ['S', 'IH', 'NG', 'G', 'AH', 'L'],
+    'yes': ['Y', 'EH', 'S'], 'no': ['N', 'OW'], 'hi': ['HH', 'AY'],
+    'formant': ['F', 'AO', 'R', 'M', 'AH', 'N', 'T'], 'speech': ['S', 'P', 'IY', 'CH'],
+    'synthesis': ['S', 'IH', 'N', 'TH', 'AH', 'S', 'IH', 'S'], 'tts': ['T', 'IY', 'T', 'IY', 'EH', 'S'],
+    'computer': ['K', 'AH', 'M', 'P', 'Y', 'UW', 'T', 'ER'], 'please': ['P', 'L', 'IY', 'Z'],
+    'thank': ['TH', 'AE', 'NG', 'K'], 'you': ['Y', 'UW'], 'good': ['G', 'UH', 'D'], 'morning': ['M', 'AO', 'R', 'N', 'IH', 'NG'],
+    'afternoon': ['AE', 'F', 'T', 'ER', 'N', 'UW', 'N'], 'evening': ['IY', 'V', 'N', 'IH', 'NG'],
+    'ship': ['SH', 'IH', 'P'], 'fish': ['F', 'IH', 'SH'], 'think': ['TH', 'IH', 'NG', 'K'],
+    'sushi': ['S', 'UW', 'SH', 'IY'], 'zip': ['Z', 'IH', 'P'], 'measure': ['M', 'EH', 'ZH', 'ER'],
+    'thin': ['TH', 'IH', 'N'], 'thick': ['TH', 'IH', 'K'], 'thistle': ['TH', 'IH', 'S', 'AH', 'L'],
+}
 
 def text_to_phonemes(text: str) -> List[str]:
     text = text.lower().strip()
@@ -360,7 +149,10 @@ def text_to_phonemes(text: str) -> List[str]:
     words = text.split()
     phoneme_sequence = ['SIL']
     for i, word in enumerate(words):
-        phoneme_sequence.append('SIL')
+        phons = WORD_MAP.get(word, ['SIL'])
+        phoneme_sequence.extend(phons)
+        if i < len(words) - 1:
+            phoneme_sequence.append('SIL')
     phoneme_sequence.append('SIL')
     return phoneme_sequence
 
@@ -372,7 +164,12 @@ def phonemes_to_spec(phonemes: List[str], voice: Voice, pitch_base: float = 115.
         if ph == 'SIL':
             pitch = [0.0]
         elif ph in VOWELS:
-            pitch = [pitch_base]
+            if i == len(phonemes) - 2:
+                pitch = [pitch_base * 0.95, pitch_base * 0.90]
+            elif i == 1:
+                pitch = [pitch_base * 1.05, pitch_base * 1.10]
+            else:
+                pitch = [pitch_base]
         else:
             pitch = [pitch_base if ph_data.get('voiced', False) else 0.0]
         f1 = ph_data.get('f1', 0.0) or 0.0
@@ -398,14 +195,17 @@ def parse_phoneme_spec(text: str, voice: Voice) -> List[Dict]:
             continue
         parts = line.split()
         if len(parts) < 3:
+            print(f"Warning: Line {line_num}: Expected 'PHONEME DURATION P0 [P1...]', got: {line}")
             continue
         ph_name = parts[0].upper()
         if ph_name not in PHONEME_TO_BYTE:
+            print(f"Warning: Line {line_num}: Unknown phoneme '{ph_name}', skipping")
             continue
         try:
             duration = max(0.01, min(2.0, float(parts[1])))
             pitch_points = [float(p) for p in parts[2:]]
             if len(pitch_points) > 8:
+                print(f"Warning: Line {line_num}: Max 8 pitch points allowed (truncating)")
                 pitch_points = pitch_points[:8]
             ph_data = voice.get_phoneme_data(ph_name)
             f1 = ph_data.get('f1', 0.0) or 0.0
@@ -421,9 +221,17 @@ def parse_phoneme_spec(text: str, voice: Voice) -> List[Dict]:
                 'f3': f3,
                 'voiced': ph_name not in {'SIL','B','D','G','P','T','K','F','S','SH','TH','HH','CH'}
             })
-        except ValueError:
+        except ValueError as e:
+            print(f"Warning: Line {line_num}: Invalid number format: {e}")
             continue
     return specs
+
+def specs_to_readable(specs: List[Dict]) -> str:
+    lines = ["# PHONEME DURATION P0 [P1 P2 ...]"]
+    for spec in specs:
+        pitches = ' '.join(f"{p:.1f}" for p in spec['pitch_contour'])
+        lines.append(f"{spec['phoneme']:4s} {spec['duration']:6.3f} {pitches}")
+    return '\n'.join(lines)
 
 def save_parameterized_phonemes(filename: str, specs: List[Dict]):
     with open(filename, 'wb') as f:
@@ -437,12 +245,13 @@ def save_parameterized_phonemes(filename: str, specs: List[Dict]):
             np.array(pitches[:8], dtype=np.float32).tofile(f)
             np.array([spec['f1'], spec['f2'], spec['f3']], dtype=np.float32).tofile(f)
     print(f"Saved {len(specs)} parameterized phonemes to: {filename}")
+    print("Format: 50 bytes/phoneme (PHX format with pitch contours)")
 
 def load_parameterized_phonemes(filename: str) -> List[Dict]:
     with open(filename, 'rb') as f:
         magic = f.read(4)
         if magic != b'\xDE\xAD\xBE\xEF':
-            raise ValueError("Not a valid PHX file")
+            raise ValueError(f"Not a valid PHX file (expected b'\\xDE\\xAD\\xBE\\xEF', got {magic})")
         specs = []
         while True:
             ph_byte = f.read(1)
@@ -658,6 +467,7 @@ class FormantSynthesizer:
         return output * 0.82
     
     def synthesize_from_specs(self, specs: List[Dict]) -> np.ndarray:
+        print(f"Synthesizing {len(specs)} phonemes with pitch contours")
         segments = []
         total_duration = 0.0
         for i, spec in enumerate(specs):
@@ -674,6 +484,7 @@ class FormantSynthesizer:
         audio = np.tanh(audio * 1.25) * 0.94
         b, a = sig.butter(5, 5000/(self.fs/2), btype='low')
         audio = sig.filtfilt(b, a, audio)
+        print(f"Synthesis complete: {total_duration:.2f} seconds")
         return audio
 
 def save_wav(filename: str, audio: np.ndarray, sr: int = smp):
@@ -683,11 +494,12 @@ def save_wav(filename: str, audio: np.ndarray, sr: int = smp):
         wf.setsampwidth(2)
         wf.setframerate(sr)
         wf.writeframes(audio.tobytes())
+    print(f"Saved audio to: {filename}")
 
 def menu_legacy_phoneme_to_bytecode():
     print("\n(LEGACY) PHONEME -> BYTECODE (.phn)")
     print("Convert readable phonemes (SIL HH EH L OW) to simple bytecode (.phn)")
-    print("Format: One byte per phoneme (0x00-0xFF) - NO pitch contours")
+    print("Format: One byte per phoneme (0x00-0xFF)")
     
     choice = input("\nInput method: (1) file or (2) manual? [2]: ").strip() or '2'
     if choice == '1':
@@ -709,6 +521,8 @@ def menu_legacy_phoneme_to_bytecode():
                     phonemes.append(token)
                 elif re.match(r'^-?\d+(\.\d+)?$', token):
                     continue
+                else:
+                    print(f"Warning: Unknown token '{token}' - skipping")
     else:
         print("\nEnter phonemes (space-separated, e.g., SIL HH EH L OW):")
         text = input("> ").strip()
@@ -721,6 +535,8 @@ def menu_legacy_phoneme_to_bytecode():
                 phonemes.append(token)
             elif re.match(r'^-?\d+(\.\d+)?$', token):
                 continue
+            else:
+                print(f"Warning: Unknown token '{token}' - skipping")
     
     if not phonemes:
         print("Error: No valid phonemes!")
@@ -744,10 +560,12 @@ def menu_legacy_phoneme_to_bytecode():
             f.write(bytes([PHONEME_TO_BYTE[ph]]))
     
     print(f"Saved {len(phonemes)} phonemes to: {filename}")
+    print("Format: Legacy .phn (1 byte/phoneme + header)")
 
 def menu_legacy_bytecode_to_audio():
     print("\nLEGACY BYTECODE -> AUDIO (.phn)")
     print("Format: FE EB DA ED header + voice name + 1 byte per phoneme")
+    print("Uses fixed voice defaults only")
     
     filename = input("\nEnter legacy bytecode file (.phn): ").strip()
     if not os.path.exists(filename):
@@ -771,13 +589,17 @@ def menu_legacy_bytecode_to_audio():
     
     print(f"Loaded {len(byte_data)} phonemes from {filename}")
     phonemes = []
-    for byte_val in byte_:
+    for byte_val in byte_data:
         if byte_val in BYTE_TO_PHONEME:
             phonemes.append(BYTE_TO_PHONEME[byte_val])
+        else:
+            print(f"Warning: Unknown byte 0x{byte_val:02X} - skipping")
     
     if not phonemes:
         print("Error: No valid phonemes!")
         return
+    
+    print("   " + " ".join(phonemes[:20]) + ("..." if len(phonemes) > 20 else ""))
     
     specs = []
     for ph in phonemes:
@@ -811,6 +633,7 @@ def menu_legacy_bytecode_to_audio():
 def menu_spec_to_bytecode():
     print("\nPHONEME SPEC -> BYTECODE (.phx)")
     print("Format: PHONEME DURATION P0 [P1 P2 ... Pn]  (pitch in Hz)")
+    print("Example: OW 0.19 600 760 870 900")
     
     choice = input("\nRead from (1) file or (2) manual input? [1]: ").strip() or '1'
     if choice == '1':
@@ -848,6 +671,7 @@ def menu_spec_to_bytecode():
 def menu_new_bytecode_to_audio():
     print("\nBYTECODE -> AUDIO (.phx)")
     print("Format: PHX header (DE AD BE EF) + parameterized phoneme data")
+    print("        50 bytes/phoneme: ID + duration + pitch points + formants")
     
     filename = input("\nEnter parameterized bytecode file (.phx): ").strip()
     if not os.path.exists(filename):
@@ -889,15 +713,17 @@ def menu_new_bytecode_to_audio():
                 print("Playing audio...")
             except Exception as e:
                 print(f"Could not play audio automatically: {e}")
+                print(f"Try opening {wav_name} manually with your media player")
 
 def menu_voice_management():
     while True:
         print("\nVOICE MANAGEMENT MENU")
         print("1. List available voices")
         print("2. Choose voice")
-        print("3. Back to main menu")
+        print("3. Create new voice (edit JSON in voices/ directory)")
+        print("4. Back to main menu")
         
-        choice = input("\nSelect option (1-3): ").strip()
+        choice = input("\nSelect option (1-4): ").strip()
         if choice == '1':
             print("\nAvailable voices:")
             for name, voice in VOICE_REGISTRY.list_voices().items():
@@ -910,44 +736,86 @@ def menu_voice_management():
             else:
                 print(f"Voice '{name}' not found")
         elif choice == '3':
+            print("Voice creation guide:")
+            print("  1. Create JSON file in 'voices/' directory")
+            print("  2. Use existing voice JSON as template")
+            print("  3. Restart app to load new voice")
+        elif choice == '4':
             break
         else:
-            print("Invalid option. Please enter 1-3.")
+            print("Invalid option. Please enter 1-4.")
         
         input("\nPress Enter to continue...")
+
+def menu_show_mapping():
+    print("\nPHONEME REFERENCE TABLE WITH ACOUSTIC PROPERTIES")
+    print(f"{'Byte':<6} {'Phoneme':<8} {'Type':<12} {'F1':<6} {'F2':<6} {'F3':<6} {'Pitch':<8} {'Len(s)':<8} {'Example'}")
+    print("-" * 92)
+    
+    voice = VOICE_REGISTRY.current_voice
+    examples = {
+        'SIL': 'silence', 'AH': 'a*bout*', 'AE': '*c*a*t', 'AA': 'f*a*ther', 'AO': 'th*ough*t',
+        'EH': 'b*e*d', 'EY': 'f*ace*', 'IH': 's*i*t', 'IY': 'fl*ee*ce', 'OW': 'g*oa*t',
+        'UH': 'f*oo*t', 'UW': 'g*oo*se', 'ER': 'n*ur*se', 'B': '*b*at', 'D': '*d*og',
+        'G': '*g*o', 'P': '*p*at', 'T': '*t*op', 'K': '*c*at', 'M': '*m*an', 'N': '*n*o',
+        'NG': 'si*ng*', 'L': '*l*eg', 'R': '*r*ed', 'F': '*f*an', 'S': '*s*un', 'SH': '*sh*ip',
+        'TH': '*th*in', 'DH': '*th*is', 'V': '*v*an', 'Z': '*z*oo', 'ZH': 'mea*s*ure',
+        'W': '*w*et', 'Y': '*y*es', 'HH': '*h*at', 'CH': '*ch*at', 'JH': '*j*ump'
+    }
+    
+    for byte_val in sorted(BYTE_TO_PHONEME.keys()):
+        ph = BYTE_TO_PHONEME[byte_val]
+        ph_data = voice.get_phoneme_data(ph)
+        f1 = ph_data.get('f1', 0) or 0
+        f2 = ph_data.get('f2', 0) or 0
+        f3 = ph_data.get('f3', 0) or 0
+        f4 = ph_data.get('f4', 0)
+        length = ph_data.get('length', 0.14)
+        voiced = ph_data.get('voiced', False)
+        
+        if ph == 'SIL':
+            ptype = 'SILENCE'
+        elif voiced is True:
+            ptype = 'VOWEL'
+        elif ph in STOPS:
+            ptype = 'STOP'
+        elif ph in FRICATIVES_UNVOICED or ph in FRICATIVES_VOICED:
+            ptype = 'FRICATIVE'
+        else:
+            ptype = 'OTHER'
+        
+        desc = examples.get(ph, '')
+        print(f"0x{byte_val:02X}   {ph:<8} {ptype:<12} {f1:<6.0f} {f2:<6.0f} {f3:<6.0f} {f4:<8.0f} {length:<8.3f} {desc}")
 
 def main_menu():
     while True:
         print("\nFORMANT SYNTHESIS TTS - CLI MODE")
         print("1. (LEGACY) Phoneme -> Bytecode (.phn)")
         print("2. (LEGACY) Bytecode -> Audio (.phn)")
-        print("3. (LEGACY) IPA to Phoneme")
-        print("4. IPA to Phoneme Spec  (with stress handling)")
-        print("5. Phoneme Spec -> Bytecode (.phx)")
-        print("6. Bytecode -> Audio (.phx)")
-        print("7. Voice Management")
-        print("8. Exit")
+        print("3. Phoneme Spec -> Bytecode (.phx)")
+        print("4. Bytecode -> Audio (.phx)")
+        print("5. Voice Management")
+        print("6. Phoneme Reference")
+        print("7. Exit")
         
-        choice = input("\nSelect option (1-8): ").strip()
+        choice = input("\nSelect option (1-7): ").strip()
         if choice == '1':
             menu_legacy_phoneme_to_bytecode()
         elif choice == '2':
             menu_legacy_bytecode_to_audio()
         elif choice == '3':
-            menu_ipa_to_legacy_phoneme()
-        elif choice == '4':
-            menu_ipa_to_phoneme_spec()
-        elif choice == '5':
             menu_spec_to_bytecode()
-        elif choice == '6':
+        elif choice == '4':
             menu_new_bytecode_to_audio()
-        elif choice == '7':
+        elif choice == '5':
             menu_voice_management()
-        elif choice == '8':
+        elif choice == '6':
+            menu_show_mapping()
+        elif choice == '7':
             print("\nGoodbye! Happy synthesizing!")
             break
         else:
-            print("Invalid option. Please enter 1-8.")
+            print("Invalid option. Please enter 1-7.")
         
         input("\nPress Enter to continue...")
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -968,7 +836,7 @@ def cli_mode():
     args = parser.parse_args()
 
     # Voice listing mode
-    if args.list_vvoices:
+    if args.list_voices:
         print("Available voices:")
         for name, voice in VOICE_REGISTRY.list_voices().items():
             marker = " (current)" if name == VOICE_REGISTRY.current_voice.name else ""
