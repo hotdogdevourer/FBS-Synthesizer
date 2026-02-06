@@ -131,7 +131,7 @@ WORD_MAP = {
     'eight': ['EY', 'T'], 'nine': ['N', 'AA', 'EY', 'N'], 'ten': ['T', 'EH', 'N'],
     'robot': ['R', 'OW', 'B', 'AH', 'T'], 'voice': ['V', 'AO', 'Y', 'S'], 'i': ['AA', 'EY'],
     'am': ['AH', 'M'], 'and': ['AH', 'N', 'D'], 'single': ['S', 'IH', 'NG', 'G', 'AH', 'L'],
-    'yes': ['Y', 'EH', 'S'], 'no': ['N', 'OW'], 'hi': ['HH', 'AY'],
+    'yes': ['Y', 'EH', 'S'], 'no': ['N', 'OW'], 'hi': ['HH', 'AA', 'EY'],
     'formant': ['F', 'AO', 'R', 'M', 'AH', 'N', 'T'], 'speech': ['S', 'P', 'IY', 'CH'],
     'synthesis': ['S', 'IH', 'N', 'TH', 'AH', 'S', 'IH', 'S'], 'tts': ['T', 'IY', 'T', 'IY', 'EH', 'S'],
     'computer': ['K', 'AH', 'M', 'P', 'Y', 'UW', 'T', 'ER'], 'please': ['P', 'L', 'IY', 'Z'],
@@ -160,6 +160,8 @@ def phonemes_to_spec(phonemes: List[str], voice: Voice, pitch_base: float = 115.
     for i, ph in enumerate(phonemes):
         ph_data = voice.get_phoneme_data(ph)
         duration = ph_data.get('length', 0.14)
+        overlap = 0.018 if ph in VOWELS and i < len(phonemes) - 1 else 0.008  # Default overlaps
+        
         if ph == 'SIL':
             pitch = [0.0]
         elif ph in VOWELS:
@@ -171,12 +173,15 @@ def phonemes_to_spec(phonemes: List[str], voice: Voice, pitch_base: float = 115.
                 pitch = [pitch_base]
         else:
             pitch = [pitch_base if ph_data.get('voiced', False) else 0.0]
+        
         f1 = ph_data.get('f1', 0.0) or 0.0
         f2 = ph_data.get('f2', 0.0) or 0.0
         f3 = ph_data.get('f3', 0.0) or 0.0
+        
         specs.append({
             'phoneme': ph,
             'duration': duration,
+            'overlap': overlap,  # Added default overlap values
             'pitch_contour': pitch,
             'num_pitch_points': len(pitch),
             'f1': f1,
@@ -193,14 +198,15 @@ def parse_phoneme_spec(text: str, voice: Voice) -> List[Dict]:
         if not line or line.startswith('#'):
             continue
         parts = line.split()
-        if len(parts) < 3:
+        if len(parts) < 4:  # Now requires at least PHONEME DUR OVRLP P0
             continue
         ph_name = parts[0].upper()
         if ph_name not in PHONEME_TO_BYTE:
             continue
         try:
             duration = max(0.01, min(2.0, float(parts[1])))
-            pitch_points = [float(p) for p in parts[2:]]
+            overlap = max(0.0, min(0.5, float(parts[2])))  # Cap overlap at 0.5s
+            pitch_points = [float(p) for p in parts[3:]]   # Pitch starts at index 3 now
             if len(pitch_points) > 8:
                 pitch_points = pitch_points[:8]
             ph_data = voice.get_phoneme_data(ph_name)
@@ -210,6 +216,7 @@ def parse_phoneme_spec(text: str, voice: Voice) -> List[Dict]:
             specs.append({
                 'phoneme': ph_name,
                 'duration': duration,
+                'overlap': overlap,  # NEW FIELD
                 'pitch_contour': pitch_points,
                 'num_pitch_points': len(pitch_points),
                 'f1': f1,
@@ -222,10 +229,10 @@ def parse_phoneme_spec(text: str, voice: Voice) -> List[Dict]:
     return specs
 
 def specs_to_readable(specs: List[Dict]) -> str:
-    lines = ["# PHONEME DURATION P0 [P1 P2 ...]"]
+    lines = ["# PHONEME  DUR    OVRLP  P0 [P1 P2 ...]"]
     for spec in specs:
         pitches = ' '.join(f"{p:.1f}" for p in spec['pitch_contour'])
-        lines.append(f"{spec['phoneme']:4s} {spec['duration']:6.3f} {pitches}")
+        lines.append(f"{spec['phoneme']:4s} {spec['duration']:6.3f} {spec['overlap']:6.3f} {pitches}")
     return '\n'.join(lines)
 
 def save_parameterized_phonemes(filename: str, specs: List[Dict]):
@@ -235,6 +242,7 @@ def save_parameterized_phonemes(filename: str, specs: List[Dict]):
             ph_id = PHONEME_TO_BYTE[spec['phoneme']]
             f.write(bytes([ph_id]))
             np.array([spec['duration']], dtype=np.float32).tofile(f)
+            np.array([spec.get('overlap', 0.0)], dtype=np.float32).tofile(f)  # NEW FIELD
             f.write(bytes([spec['num_pitch_points']]))
             pitches = spec['pitch_contour'] + [0.0] * (8 - spec['num_pitch_points'])
             np.array(pitches[:8], dtype=np.float32).tofile(f)
@@ -257,6 +265,11 @@ def load_parameterized_phonemes(filename: str) -> List[Dict]:
             if len(dur_arr) < 1:
                 break
             duration = float(dur_arr[0])
+            overlap_arr = np.fromfile(f, dtype=np.float32, count=1)  # NEW FIELD
+            if len(overlap_arr) < 1:
+                overlap = 0.0
+            else:
+                overlap = float(overlap_arr[0])
             num_pts_byte = f.read(1)
             if not num_pts_byte:
                 break
@@ -270,6 +283,7 @@ def load_parameterized_phonemes(filename: str) -> List[Dict]:
             specs.append({
                 'phoneme': BYTE_TO_PHONEME[ph_id],
                 'duration': duration,
+                'overlap': max(0.0, min(0.5, overlap)),  # Safety clamp
                 'pitch_contour': [float(p) for p in pitches_arr[:num_pts]],
                 'num_pitch_points': num_pts,
                 'f1': float(formants_arr[0]),
@@ -461,19 +475,56 @@ class FormantSynthesizer:
         return output * 0.82
     
     def synthesize_from_specs(self, specs: List[Dict]) -> np.ndarray:
-        segments = []
+        if not specs:
+            return np.zeros(0)
+        
+        # Calculate total output length accounting for overlaps
         total_duration = 0.0
-        for i, spec in enumerate(specs):
-            seg = self.synthesize_phoneme_direct(spec)
-            segments.append(seg)
+        for spec in specs:
             total_duration += spec['duration']
-            if spec['phoneme'] != 'SIL' and i < len(specs) - 1:
-                next_ph = specs[i+1]['phoneme']
-                if next_ph != 'SIL':
-                    gap_dur = 0.003
-                    segments.append(np.zeros(int(gap_dur * self.fs)))
-                    total_duration += gap_dur
-        audio = np.concatenate(segments)
+        
+        # Subtract overlaps (each overlap reduces total time)
+        for i in range(len(specs) - 1):
+            total_duration -= min(specs[i].get('overlap', 0.0), specs[i]['duration'])
+        
+        total_samples = int(total_duration * self.fs) + 10  # Small buffer
+        output = np.zeros(total_samples)
+        current_pos = 0
+        
+        for i, spec in enumerate(specs):
+            # Generate current phoneme
+            phoneme_audio = self.synthesize_phoneme_direct(spec)
+            phoneme_samples = len(phoneme_audio)
+            
+            # Determine how much to overlap with NEXT phoneme
+            overlap_dur = spec.get('overlap', 0.0)
+            if i == len(specs) - 1:  # Last phoneme never overlaps
+                overlap_dur = 0.0
+            
+            # Cap overlap to prevent negative durations
+            overlap_samples = min(
+                int(overlap_dur * self.fs),
+                phoneme_samples - 1,  # Must leave at least 1 sample
+                int(spec['duration'] * self.fs * 0.5)  # Max 50% of phoneme
+            )
+            
+            # Place phoneme in output buffer
+            end_pos = current_pos + phoneme_samples
+            if end_pos > len(output):
+                # Extend buffer if needed (shouldn't happen with proper duration calc)
+                output = np.resize(output, end_pos + 1000)
+            
+            # ADD (not crossfade!) the phoneme audio
+            output[current_pos:end_pos] += phoneme_audio
+            
+            # Advance position (accounting for overlap)
+            current_pos += (phoneme_samples - overlap_samples)
+        
+        # Final cleanup
+        actual_length = min(current_pos, len(output))
+        audio = output[:actual_length]
+        
+        # Apply global processing
         audio = np.tanh(audio * 1.25) * 0.94
         b, a = sig.butter(5, 5000/(self.fs/2), btype='low')
         audio = sig.filtfilt(b, a, audio)
