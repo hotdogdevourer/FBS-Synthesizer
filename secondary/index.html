@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FSB4 Formant Speech Synthesizer</title>
+<title>SSNJ Formant Speech Synthesizer</title>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -210,7 +210,7 @@ audio {
 </style>
 </head>
 <body>
-<h1>🤖 FSB4 Formant Speech Synthesizer</h1>
+<h1>🤖 Jim Formant Speech Synthesizer</h1>
 <div class="container">
     <div class="tabs">
         <button class="tab active" data-tab="word">🔤 Word Mode</button>
@@ -262,7 +262,7 @@ D        0.068  0.008  0.0</textarea>
     <div id="status" class="status-loading">Initializing Pyodide environment...</div>
     
     <div class="info-box">
-        <strong>ℹ️ About FSB4:</strong> Formant-based speech synthesizer running entirely in-browser via Pyodide.<br>
+        <strong>ℹ️ About Jim:</strong> Formant-based speech synthesizer running entirely in-browser via Pyodide.<br>
         Converts text → phonemes → formant synthesis → WAV audio. No server required!
     </div>
     
@@ -279,7 +279,7 @@ D        0.068  0.008  0.0</textarea>
     </div>
 </div>
 
-<script type="text/python" id="fsb4-source">
+<script type="text/python" id="jim-source">
 import numpy as np
 import scipy.signal as sig
 import wave
@@ -289,7 +289,7 @@ from typing import Dict, List
 from io import BytesIO
 
 # ======================
-# FSB4.PY CORE CODE (Modified for browser execution)
+# JIM.PY CORE CODE (Modified for browser execution)
 # ======================
 smp = 97000
 BYTE_TO_PHONEME = {
@@ -866,10 +866,10 @@ async function setupPyodide() {
         updateStatus("Installing packages...", "status-loading");
         await pyodide.loadPackage(["numpy", "scipy"]);
         
-        const fsb4Source = document.getElementById('fsb4-source').textContent;
+        const jimSource = document.getElementById('jim-source').textContent;
         updateStatus("Initializing speech engine...", "status-loading");
         
-        pyodide.runPython(fsb4Source);
+        pyodide.runPython(jimSource);
         
         pyodide.runPython(`
 def js_synthesize(text):
@@ -990,15 +990,15 @@ function downloadWav() {
     try {
         // Get filename based on current tab
         const activeTab = document.querySelector('.tab.active').dataset.tab;
-        let filename = 'fsb4_output';
+        let filename = 'jim_output';
         
         if (activeTab === 'word') {
             const text = textInput.value.trim().substring(0, 30).replace(/[^\w\s]/g, '');
-            filename = text ? `fsb4_${text.replace(/\s+/g, '_')}` : 'fsb4_output';
+            filename = text ? `jim_${text.replace(/\s+/g, '_')}` : 'jim_output';
         } else if (activeTab === 'phoneme') {
-            filename = 'fsb4_phonemes';
+            filename = 'jim_phonemes';
         } else {
-            filename = 'fsb4_spec';
+            filename = 'jim_spec';
         }
         
         // Create download link
