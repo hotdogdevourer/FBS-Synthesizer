@@ -53,7 +53,547 @@ OW   0.140  0.018  115.0</textarea>
             `);
             
             // Load your FSB4.py code
-            const fsb4Code = `// Your FSB4.py code here (replaced placeholder below)`;
+            const fsb4Code = `
+import numpy as np
+import scipy.signal as sig
+import wave
+import re
+import os
+import json
+import subprocess
+from pathlib import Path
+from typing import Dict, List
+
+smp = 48000
+VOICES_DIR = Path("voices")
+VOICES_DIR.mkdir(exist_ok=True)
+
+BYTE_TO_PHONEME = {
+    0x00: 'SIL', 0x01: 'AH', 0x02: 'AE', 0x03: 'AA', 0x04: 'AO', 0x05: 'EH', 0x06: 'EY',
+    0x07: 'IH', 0x08: 'IY', 0x09: 'OW', 0x0A: 'UH', 0x0B: 'UW', 0x0C: 'ER', 0x0D: 'B',
+    0x0E: 'D', 0x0F: 'G', 0x10: 'P', 0x11: 'T', 0x12: 'K', 0x13: 'M', 0x14: 'N', 0x15: 'NG',
+    0x16: 'L', 0x17: 'R', 0x18: 'F', 0x19: 'S', 0x1A: 'SH', 0x1B: 'TH', 0x1C: 'DH', 0x1D: 'V',
+    0x1E: 'Z', 0x1F: 'ZH', 0x20: 'W', 0x21: 'Y', 0x22: 'HH', 0x23: 'CH', 0x24: 'JH',
+}
+PHONEME_TO_BYTE = {v: k for k, v in BYTE_TO_PHONEME.items()}
+
+VOWELS = {'AH','AE','AA','AO','EH','EY','IH','IY','OW','UH','UW','ER'}
+STOPS = {'P','T','K','B','D','G','CH'}
+FRICATIVES_UNVOICED = {'F','S','SH','TH','HH'}
+FRICATIVES_VOICED = {'V','Z','ZH','DH'}
+
+class Voice:
+    def __init__(self, name: str, description: str = ""):
+        self.name = name
+        self.description = description
+        self.phonemes: Dict[str, Dict] = {}
+    
+    def get_phoneme_data(self, phoneme: str) -> Dict:
+        if phoneme.endswith('_FINAL'):
+            base_ph = phoneme.replace('_FINAL', '')
+            data = self.phonemes.get(base_ph, self.phonemes.get('SIL', {})).copy()
+            if base_ph in VOWELS:
+                data['length'] = min(data.get('length', 0.14) * 1.4, 0.35)
+            return data
+        return self.phonemes.get(phoneme, self.phonemes.get('SIL', {}))
+    
+    def save(self, filepath: str) -> None:
+        data = {"name": self.name, "description": self.description, "phonemes": self.phonemes}
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        print(f"Voice '{self.name}' saved to: {filepath}")
+    
+    @classmethod
+    def load(cls, filepath: str) -> 'Voice':
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        voice = cls(data['name'], data.get('description', ''))
+        voice.phonemes = data['phonemes']
+        return voice
+
+class DefaultVoice(Voice):
+    def __init__(self):
+        super().__init__("Default", "Built-in robotic voice")
+        self.phonemes = {
+            'AH': {'f1': 700, 'f2': 1100, 'f3': 2400, 'f4': 115, 'length': 0.14, 'voiced': True},
+            'AE': {'f1': 650, 'f2': 1250, 'f3': 2500, 'f4': 115, 'length': 0.14, 'voiced': True},
+            'AA': {'f1': 620, 'f2': 1180, 'f3': 2550, 'f4': 115, 'length': 0.14, 'voiced': True},
+            'AO': {'f1': 550, 'f2': 850, 'f3': 2400, 'f4': 115, 'length': 0.14, 'voiced': True},
+            'EH': {'f1': 530, 'f2': 1700, 'f3': 2450, 'f4': 115, 'length': 0.14, 'voiced': True},
+            'EY': {'f1': 400, 'f2': 2100, 'f3': 2800, 'f4': 115, 'length': 0.14, 'voiced': True},
+            'IH': {'f1': 420, 'f2': 1950, 'f3': 2500, 'f4': 115, 'length': 0.14, 'voiced': True},
+            'IY': {'f1': 300, 'f2': 2250, 'f3': 3000, 'f4': 115, 'length': 0.14, 'voiced': True},
+            'OW': {'f1': 450, 'f2': 900, 'f3': 2350, 'f4': 115, 'length': 0.14, 'voiced': True},
+            'UH': {'f1': 400, 'f2': 650, 'f3': 2400, 'f4': 115, 'length': 0.14, 'voiced': True},
+            'UW': {'f1': 330, 'f2': 900, 'f3': 2200, 'f4': 115, 'length': 0.14, 'voiced': True},
+            'ER': {'f1': 480, 'f2': 1180, 'f3': 1650, 'f4': 115, 'length': 0.14, 'voiced': True},
+            'M':  {'f1': 350, 'f2': 1050, 'f3': 2250, 'f4': 115, 'length': 0.12, 'voiced': True},
+            'N':  {'f1': 320, 'f2': 1150, 'f3': 2450, 'f4': 115, 'length': 0.12, 'voiced': True},
+            'NG': {'f1': 280, 'f2': 950, 'f3': 2350, 'f4': 115, 'length': 0.12, 'voiced': True},
+            'L':  {'f1': 400, 'f2': 1150, 'f3': 2450, 'f4': 115, 'length': 0.12, 'voiced': True},
+            'R':  {'f1': 450, 'f2': 1250, 'f3': 1500, 'f4': 115, 'length': 0.12, 'voiced': True},
+            'DH': {'f1': 380, 'f2': 1650, 'f3': 2450, 'f4': 115, 'length': 0.12, 'voiced': True},
+            'V':  {'f1': 380, 'f2': 1550, 'f3': 2450, 'f4': 115, 'length': 0.12, 'voiced': True},
+            'Z':  {'f1': 380, 'f2': 1750, 'f3': 2450, 'f4': 115, 'length': 0.12, 'voiced': True},
+            'ZH': {'f1': 380, 'f2': 1450, 'f3': 2250, 'f4': 115, 'length': 0.12, 'voiced': True},
+            'W':  {'f1': 350, 'f2': 700, 'f3': 2450, 'f4': 115, 'length': 0.12, 'voiced': True},
+            'Y':  {'f1': 350, 'f2': 2050, 'f3': 2650, 'f4': 115, 'length': 0.12, 'voiced': True},
+            'JH': {'f1': 400, 'f2': 1650, 'f3': 2450, 'f4': 115, 'length': 0.12, 'voiced': True},
+            'B':  {'f1': None, 'f2': None, 'f3': None, 'f4': 0, 'length': 0.068, 'voiced': False},
+            'D':  {'f1': None, 'f2': None, 'f3': None, 'f4': 0, 'length': 0.068, 'voiced': False},
+            'G':  {'f1': None, 'f2': None, 'f3': None, 'f4': 0, 'length': 0.068, 'voiced': False},
+            'P':  {'f1': None, 'f2': None, 'f3': None, 'f4': 0, 'length': 0.068, 'voiced': False},
+            'T':  {'f1': None, 'f2': None, 'f3': None, 'f4': 0, 'length': 0.068, 'voiced': False},
+            'K':  {'f1': None, 'f2': None, 'f3': None, 'f4': 0, 'length': 0.068, 'voiced': False},
+            'F':  {'f1': None, 'f2': None, 'f3': None, 'f4': 0, 'length': 0.125, 'voiced': False},
+            'S':  {'f1': None, 'f2': None, 'f3': None, 'f4': 0, 'length': 0.125, 'voiced': False},
+            'SH': {'f1': None, 'f2': None, 'f3': None, 'f4': 0, 'length': 0.125, 'voiced': False},
+            'TH': {'f1': None, 'f2': None, 'f3': None, 'f4': 0, 'length': 0.125, 'voiced': False},
+            'HH': {'f1': None, 'f2': None, 'f3': None, 'f4': 0, 'length': 0.125, 'voiced': False},
+            'CH': {'f1': None, 'f2': None, 'f3': None, 'f4': 0, 'length': 0.068, 'voiced': False},
+            'SIL': {'f1': 0, 'f2': 0, 'f3': 0, 'f4': 0, 'length': 0.19, 'voiced': 'silence'},
+        }
+
+class VoiceRegistry:
+    def __init__(self):
+        self.voices: Dict[str, Voice] = {'Default': DefaultVoice()}
+        self._load_custom_voices()
+        self.current_voice: Voice = self.voices['Default']
+    
+    def _load_custom_voices(self):
+        for filepath in VOICES_DIR.glob("*.json"):
+            try:
+                voice = Voice.load(filepath)
+                self.voices[voice.name] = voice
+            except Exception:
+                pass
+    
+    def set_current_voice(self, name: str) -> bool:
+        if name in self.voices:
+            self.current_voice = self.voices[name]
+            return True
+        return False
+    
+    def list_voices(self) -> Dict[str, Voice]:
+        return self.voices
+
+VOICE_REGISTRY = VoiceRegistry()
+
+WORD_MAP = {
+    'hello': ['HH', 'EH', 'L', 'AO', 'OW'], 'world': ['W', 'ER', 'L', 'D'], 'test': ['T', 'EH', 'S', 'T'],
+    'one': ['W', 'AH', 'N'], 'two': ['T', 'UW'], 'this': ['DH', 'IH', 'S'], 'is': ['IH', 'S'],
+    'text': ['T', 'AE', 'K', 'S', 'T'], 'a': ['AH'], 'three': ['TH', 'R', 'IY'], 'four': ['F', 'AO', 'R'],
+    'five': ['F', 'AA', 'EY', 'V'], 'six': ['S', 'IH', 'K', 'S'], 'seven': ['S', 'EH', 'V', 'EH', 'N'],
+    'eight': ['EY', 'T'], 'nine': ['N', 'AA', 'EY', 'N'], 'ten': ['T', 'EH', 'N'],
+    'robot': ['R', 'OW', 'B', 'AH', 'T'], 'voice': ['V', 'AO', 'Y', 'S'], 'i': ['AA', 'EY'],
+    'am': ['AH', 'M'], 'and': ['AH', 'N', 'D'], 'single': ['S', 'IH', 'NG', 'G', 'AH', 'L'],
+    'yes': ['Y', 'EH', 'S'], 'no': ['N', 'OW'], 'hi': ['HH', 'AA', 'EY'],
+    'formant': ['F', 'AO', 'R', 'M', 'AH', 'N', 'T'], 'speech': ['S', 'P', 'IY', 'CH'],
+    'synthesis': ['S', 'IH', 'N', 'TH', 'AH', 'S', 'IH', 'S'], 'tts': ['T', 'IY', 'T', 'IY', 'EH', 'S'],
+    'computer': ['K', 'AH', 'M', 'P', 'Y', 'UW', 'T', 'ER'], 'please': ['P', 'L', 'IY', 'Z'],
+    'thank': ['TH', 'AE', 'NG', 'K'], 'you': ['Y', 'UW'], 'good': ['G', 'UH', 'D'], 'morning': ['M', 'AO', 'R', 'N', 'IH', 'NG'],
+    'afternoon': ['AE', 'F', 'T', 'ER', 'N', 'UW', 'N'], 'evening': ['IY', 'V', 'N', 'IH', 'NG'],
+    'ship': ['SH', 'IH', 'P'], 'fish': ['F', 'IH', 'SH'], 'think': ['TH', 'IH', 'NG', 'K'],
+    'sushi': ['S', 'UW', 'SH', 'IY'], 'zip': ['Z', 'IH', 'P'], 'measure': ['M', 'EH', 'ZH', 'ER'],
+    'thin': ['TH', 'IH', 'N'], 'thick': ['TH', 'IH', 'K'], 'thistle': ['TH', 'IH', 'S', 'AH', 'L'],
+}
+
+def text_to_phonemes(text: str) -> List[str]:
+    text = text.lower().strip()
+    text = re.sub(r'[^a-z\s]', '', text)
+    words = text.split()
+    phoneme_sequence = ['SIL']
+    for i, word in enumerate(words):
+        phons = WORD_MAP.get(word, ['SIL'])
+        phoneme_sequence.extend(phons)
+        if i < len(words) - 1:
+            phoneme_sequence.append('SIL')
+    phoneme_sequence.append('SIL')
+    return phoneme_sequence
+
+def phonemes_to_spec(phonemes: List[str], voice: Voice, pitch_base: float = 115.0) -> List[Dict]:
+    specs = []
+    for i, ph in enumerate(phonemes):
+        ph_data = voice.get_phoneme_data(ph)
+        duration = ph_data.get('length', 0.14)
+        overlap = 0.018 if ph in VOWELS and i < len(phonemes) - 1 else 0.008  # Default overlaps
+        
+        if ph == 'SIL':
+            pitch = [0.0]
+        elif ph in VOWELS:
+            if i == len(phonemes) - 2:
+                pitch = [pitch_base * 0.95, pitch_base * 0.90]
+            elif i == 1:
+                pitch = [pitch_base * 1.05, pitch_base * 1.10]
+            else:
+                pitch = [pitch_base]
+        else:
+            pitch = [pitch_base if ph_data.get('voiced', False) else 0.0]
+        
+        f1 = ph_data.get('f1', 0.0) or 0.0
+        f2 = ph_data.get('f2', 0.0) or 0.0
+        f3 = ph_data.get('f3', 0.0) or 0.0
+        
+        specs.append({
+            'phoneme': ph,
+            'duration': duration,
+            'overlap': overlap,  # Added default overlap values
+            'pitch_contour': pitch,
+            'num_pitch_points': len(pitch),
+            'f1': f1,
+            'f2': f2,
+            'f3': f3,
+            'voiced': ph not in {'SIL','B','D','G','P','T','K','F','S','SH','TH','HH','CH'}
+        })
+    return specs
+
+def parse_phoneme_spec(text: str, voice: Voice) -> List[Dict]:
+    specs = []
+    for line_num, line in enumerate(text.splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        parts = line.split()
+        if len(parts) < 4:  # Now requires at least PHONEME DUR OVRLP P0
+            continue
+        ph_name = parts[0].upper()
+        if ph_name not in PHONEME_TO_BYTE:
+            continue
+        try:
+            duration = max(0.01, min(2.0, float(parts[1])))
+            overlap = max(0.0, min(0.5, float(parts[2])))  # Cap overlap at 0.5s
+            pitch_points = [float(p) for p in parts[3:]]   # Pitch starts at index 3 now
+            if len(pitch_points) > 8:
+                pitch_points = pitch_points[:8]
+            ph_data = voice.get_phoneme_data(ph_name)
+            f1 = ph_data.get('f1', 0.0) or 0.0
+            f2 = ph_data.get('f2', 0.0) or 0.0
+            f3 = ph_data.get('f3', 0.0) or 0.0
+            specs.append({
+                'phoneme': ph_name,
+                'duration': duration,
+                'overlap': overlap,  # NEW FIELD
+                'pitch_contour': pitch_points,
+                'num_pitch_points': len(pitch_points),
+                'f1': f1,
+                'f2': f2,
+                'f3': f3,
+                'voiced': ph_name not in {'SIL','B','D','G','P','T','K','F','S','SH','TH','HH','CH'}
+            })
+        except ValueError:
+            continue
+    return specs
+
+def specs_to_readable(specs: List[Dict]) -> str:
+    lines = ["# PHONEME  DUR    OVRLP  P0 [P1 P2 ...]"]
+    for spec in specs:
+        pitches = ' '.join(f"{p:.1f}" for p in spec['pitch_contour'])
+        lines.append(f"{spec['phoneme']:4s} {spec['duration']:6.3f} {spec['overlap']:6.3f} {pitches}")
+    return '\n'.join(lines)
+
+def save_parameterized_phonemes(filename: str, specs: List[Dict]):
+    with open(filename, 'wb') as f:
+        f.write(b'\xDE\xAD\xBE\xEF')
+        for spec in specs:
+            ph_id = PHONEME_TO_BYTE[spec['phoneme']]
+            f.write(bytes([ph_id]))
+            np.array([spec['duration']], dtype=np.float32).tofile(f)
+            np.array([spec.get('overlap', 0.0)], dtype=np.float32).tofile(f)  # NEW FIELD
+            f.write(bytes([spec['num_pitch_points']]))
+            pitches = spec['pitch_contour'] + [0.0] * (8 - spec['num_pitch_points'])
+            np.array(pitches[:8], dtype=np.float32).tofile(f)
+            np.array([spec['f1'], spec['f2'], spec['f3']], dtype=np.float32).tofile(f)
+
+def load_parameterized_phonemes(filename: str) -> List[Dict]:
+    with open(filename, 'rb') as f:
+        magic = f.read(4)
+        if magic != b'\xDE\xAD\xBE\xEF':
+            raise ValueError(f"Not a valid PHX file (expected b'\\xDE\\xAD\\xBE\\xEF', got {magic})")
+        specs = []
+        while True:
+            ph_byte = f.read(1)
+            if not ph_byte:
+                break
+            ph_id = ph_byte[0]
+            if ph_id not in BYTE_TO_PHONEME:
+                raise ValueError(f"Invalid phoneme ID: 0x{ph_id:02X}")
+            dur_arr = np.fromfile(f, dtype=np.float32, count=1)
+            if len(dur_arr) < 1:
+                break
+            duration = float(dur_arr[0])
+            overlap_arr = np.fromfile(f, dtype=np.float32, count=1)  # NEW FIELD
+            if len(overlap_arr) < 1:
+                overlap = 0.0
+            else:
+                overlap = float(overlap_arr[0])
+            num_pts_byte = f.read(1)
+            if not num_pts_byte:
+                break
+            num_pts = num_pts_byte[0]
+            pitches_arr = np.fromfile(f, dtype=np.float32, count=8)
+            if len(pitches_arr) < 8:
+                break
+            formants_arr = np.fromfile(f, dtype=np.float32, count=3)
+            if len(formants_arr) < 3:
+                break
+            specs.append({
+                'phoneme': BYTE_TO_PHONEME[ph_id],
+                'duration': duration,
+                'overlap': max(0.0, min(0.5, overlap)),  # Safety clamp
+                'pitch_contour': [float(p) for p in pitches_arr[:num_pts]],
+                'num_pitch_points': num_pts,
+                'f1': float(formants_arr[0]),
+                'f2': float(formants_arr[1]),
+                'f3': float(formants_arr[2]),
+                'voiced': BYTE_TO_PHONEME[ph_id] not in {'SIL','B','D','G','P','T','K','F','S','SH','TH','HH','CH'}
+            })
+    return specs
+
+class FormantSynthesizer:
+    def __init__(self, voice: Voice, sample_rate: int = smp):
+        self.fs = sample_rate
+        self.voice = voice
+    
+    def generate_glottal_pulse_train_contour(self, duration: float, pitch_contour: List[float]):
+        n_samples = int(duration * self.fs)
+        signal = np.zeros(n_samples)
+        t = 0.0
+        if not pitch_contour or all(p == 0 for p in pitch_contour):
+            pitch_contour = [115.0]
+        num_points = len(pitch_contour)
+        while t < duration:
+            t_norm = min(1.0, t / duration)
+            if num_points == 1:
+                f0 = pitch_contour[0]
+            else:
+                contour_pos = t_norm * (num_points - 1)
+                idx_floor = int(contour_pos)
+                frac = contour_pos - idx_floor
+                if idx_floor >= num_points - 1:
+                    f0 = pitch_contour[-1]
+                else:
+                    f0 = pitch_contour[idx_floor] * (1 - frac) + pitch_contour[idx_floor + 1] * frac
+            f0 = max(50.0, min(400.0, f0))
+            period_samples = self.fs / f0
+            pulse_len = int(period_samples * 0.6)
+            if pulse_len < 8:
+                pulse_len = 8
+            pulse = np.zeros(pulse_len)
+            open_len = max(4, int(pulse_len * 0.4))
+            pulse[:open_len] = -0.5 * (1 - np.cos(np.linspace(0, np.pi, open_len)))
+            if pulse_len > open_len:
+                close_len = pulse_len - open_len
+                pulse[open_len:] = -0.1 * np.exp(-np.linspace(0, 5, close_len))
+            start = int(t * self.fs)
+            end = min(start + pulse_len, n_samples)
+            if end > start:
+                signal[start:end] += pulse[:end - start] * 0.6
+            t += period_samples / self.fs
+        peak = np.max(np.abs(signal))
+        if peak > 0.1:
+            signal = signal * (0.6 / peak)
+        return signal
+    
+    def generate_shaped_noise(self, duration: float, phoneme: str, intensity: float = 0.25):
+        n_samples = int(duration * self.fs)
+        noise = np.random.randn(n_samples)
+        if phoneme in {'S'}:
+            b, a = sig.butter(6, [4000/(self.fs/2), 8500/(self.fs/2)], btype='band')
+            noise = sig.filtfilt(b, a, noise)
+            b2, a2 = sig.butter(4, 6500/(self.fs/2), btype='high')
+            noise = sig.filtfilt(b2, a2, noise) * 1.3
+        elif phoneme in {'SH', 'ZH'}:
+            b, a = sig.butter(5, [2500/(self.fs/2), 6000/(self.fs/2)], btype='band')
+            noise = sig.filtfilt(b, a, noise)
+        elif phoneme in {'F', 'TH'}:
+            b, a = sig.butter(4, 3500/(self.fs/2), btype='low')
+            noise = sig.filtfilt(b, a, noise)
+        elif phoneme == 'HH':
+            b, a = sig.butter(3, 2800/(self.fs/2), btype='low')
+            noise = sig.filtfilt(b, a, noise)
+            noise += np.random.randn(n_samples) * 0.15
+        elif phoneme in {'V', 'DH', 'Z'}:
+            b, a = sig.butter(4, 4500/(self.fs/2), btype='low')
+            noise = sig.filtfilt(b, a, noise)
+            voicing = np.sin(2 * np.pi * 120 * np.arange(n_samples) / self.fs) * 0.15
+            noise = noise * 0.85 + voicing * 0.15
+        else:
+            b, a = sig.butter(4, 7500/(self.fs/2), btype='low')
+            noise = sig.filtfilt(b, a, noise)
+        peak = np.max(np.abs(noise))
+        if peak < 1e-6:
+            noise = np.random.randn(n_samples) * intensity * 0.7
+            peak = 1.0
+        noise = noise * (intensity / peak)
+        return noise[:n_samples]
+    
+    def stable_resonator(self, freq: float, bw: float):
+        if freq <= 0:
+            return np.array([1.0]), np.array([1.0])
+        w0 = 2 * np.pi * freq / self.fs
+        bw_rad = max(2 * np.pi * bw / self.fs, 2 * np.pi * 80 / self.fs)
+        a1 = -2 * np.exp(-bw_rad/2) * np.cos(w0)
+        a2 = np.exp(-bw_rad)
+        b0 = np.sqrt(1 - a2)
+        return np.array([b0]), np.array([1.0, a1, a2])
+    
+    def apply_formants_safe(self, signal: np.ndarray, f1: float, f2: float, f3: float) -> np.ndarray:
+        b1, b2, b3 = 60, 90, 150
+        for freq, bw in [(f1, b1), (f2, b2), (f3, b3)]:
+            if freq and freq > 50:
+                b, a = self.stable_resonator(freq, bw)
+                signal = sig.lfilter(b, a, signal)
+        peak = np.max(np.abs(signal))
+        if peak > 4.0:
+            signal = signal * (3.0 / peak)
+        b, a = sig.butter(1, 900/(self.fs/2), btype='high')
+        return sig.lfilter(b, a, signal)
+    
+    def synthesize_phoneme_direct(self, spec: Dict) -> np.ndarray:
+        ph = spec['phoneme']
+        dur = spec['duration']
+        f1, f2, f3 = spec['f1'], spec['f2'], spec['f3']
+        pitch_contour = spec['pitch_contour']
+        voiced = spec['voiced']
+        
+        if ph == 'SIL':
+            return np.zeros(int(dur * self.fs))
+        
+        if ph in STOPS:
+            n_samples = int(dur * self.fs)
+            out = np.zeros(n_samples)
+            closure_end = int(n_samples * 0.82)
+            burst_start = closure_end
+            burst_len = min(200, n_samples - burst_start)
+            if burst_len > 30:
+                burst_noise = np.random.randn(burst_len)
+                if f1 > 50:
+                    b1, a1 = self.stable_resonator(f1, 150)
+                    b2, a2 = self.stable_resonator(f2, 200)
+                    burst_noise = sig.lfilter(b1, a1, burst_noise)
+                    burst_noise = sig.lfilter(b2, a2, burst_noise)
+                burst_env = np.hanning(burst_len) * 0.6
+                out[burst_start:burst_start+burst_len] = burst_noise * burst_env
+            
+            if ph in {'P', 'T', 'K', 'CH'} and closure_end + burst_len < n_samples:
+                aspir_start = burst_start + burst_len
+                aspir_len = n_samples - aspir_start
+                if aspir_len > 50:
+                    aspiration = self.generate_shaped_noise(aspir_len/self.fs, 'HH', intensity=0.18)
+                    b, a = sig.butter(2, 800/(self.fs/2), btype='high')
+                    aspiration = sig.filtfilt(b, a, aspiration)
+                    out[aspir_start:] = aspiration[:aspir_len] * 0.4
+            elif ph in {'B', 'D', 'G'} and closure_end + burst_len < n_samples:
+                voicing_start = burst_start + int(burst_len * 1.3)
+                voicing_len = n_samples - voicing_start
+                if voicing_len > 100:
+                    voicing = self.generate_glottal_pulse_train_contour(voicing_len/self.fs, [115.0])
+                    out[voicing_start:] = voicing[:voicing_len] * 0.35
+            return out * 0.85
+        
+        if not voiced:
+            if ph == 'S':
+                intensity = 0.64
+            elif ph == 'SH':
+                intensity = 0.32
+            elif ph in {'F', 'TH'}:
+                intensity = 0.32
+            else:
+                intensity = 0.25
+            source = self.generate_shaped_noise(dur, ph, intensity=intensity)
+            if f1 > 50:
+                if ph in {'S', 'SH'}:
+                    source = self.apply_formants_safe(source, f1*0.7, f2*0.7, f3*0.7)
+                else:
+                    source = self.apply_formants_safe(source, f1, f2, f3)
+            else:
+                source = source * 0.45
+            output = source
+        else:
+            source = self.generate_glottal_pulse_train_contour(dur, pitch_contour)
+            if f1 > 50:
+                output = self.apply_formants_safe(source, f1, f2, f3)
+            else:
+                output = source * 0.45
+        
+        n = len(output)
+        env = np.ones(n)
+        att = min(0.007, dur * 0.12)
+        rel = min(0.018, dur * 0.28)
+        att_s = int(att * self.fs)
+        rel_s = int(rel * self.fs)
+        if att_s > 0:
+            env[:att_s] = np.linspace(0, 1, att_s)
+        if rel_s > 0:
+            env[-rel_s:] = np.linspace(1, 0.05, rel_s)
+        output = output * env
+        output = np.tanh(output * 1.15) * 0.93
+        return output * 0.82
+    
+    def synthesize_from_specs(self, specs: List[Dict]) -> np.ndarray:
+        if not specs:
+            return np.zeros(0)
+        
+        # Calculate total output length accounting for overlaps
+        total_duration = 0.0
+        for spec in specs:
+            total_duration += spec['duration']
+        
+        # Subtract overlaps (each overlap reduces total time)
+        for i in range(len(specs) - 1):
+            total_duration -= min(specs[i].get('overlap', 0.0), specs[i]['duration'])
+        
+        total_samples = int(total_duration * self.fs) + 10  # Small buffer
+        output = np.zeros(total_samples)
+        current_pos = 0
+        
+        for i, spec in enumerate(specs):
+            # Generate current phoneme
+            phoneme_audio = self.synthesize_phoneme_direct(spec)
+            phoneme_samples = len(phoneme_audio)
+            
+            # Determine how much to overlap with NEXT phoneme
+            overlap_dur = spec.get('overlap', 0.0)
+            if i == len(specs) - 1:  # Last phoneme never overlaps
+                overlap_dur = 0.0
+            
+            # Cap overlap to prevent negative durations
+            overlap_samples = min(
+                int(overlap_dur * self.fs),
+                phoneme_samples - 1,  # Must leave at least 1 sample
+                int(spec['duration'] * self.fs * 0.5)  # Max 50% of phoneme
+            )
+            
+            # Place phoneme in output buffer
+            end_pos = current_pos + phoneme_samples
+            if end_pos > len(output):
+                # Extend buffer if needed (shouldn't happen with proper duration calc)
+                output = np.resize(output, end_pos + 1000)
+            
+            # ADD (not crossfade!) the phoneme audio
+            output[current_pos:end_pos] += phoneme_audio
+            
+            # Advance position (accounting for overlap)
+            current_pos += (phoneme_samples - overlap_samples)
+        
+        # Final cleanup
+        actual_length = min(current_pos, len(output))
+        audio = output[:actual_length]
+        
+        # Apply global processing
+        audio = np.tanh(audio * 1.25) * 0.94
+        b, a = sig.butter(5, 5000/(self.fs/2), btype='low')
+        audio = sig.filtfilt(b, a, audio)
+        return audio
+
+def save_wav(filename: str, audio: np.ndarray, sr: int = smp):
+    audio = np.clip(audio * 32767, -32768, 32767).astype(np.int16)
+    with wave.open(filename, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(audio.tobytes())
+`;
             pyodide.runPython(fsb4Code);
             
             document.getElementById("output").innerHTML = "FSB4 loaded successfully!";
