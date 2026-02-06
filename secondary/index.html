@@ -6,109 +6,69 @@
     <title>FSB4 Speech Synthesizer (Pyodide)</title>
     <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; background: #f8fafc; color: #1e293b; }
-        .container { background: white; border-radius: 12px; padding: 30px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); }
-        h1 { text-align: center; color: #4f46e5; margin-bottom: 5px; font-size: 28px; }
-        .subtitle { text-align: center; color: #64748b; margin-bottom: 25px; }
-        .status { background: #1e293b; color: #10b981; padding: 15px; border-radius: 8px; font-family: monospace; margin: 20px 0; min-height: 24px; line-height: 1.5; }
-        textarea { width: 100%; height: 180px; padding: 14px; border: 2px solid #cbd5e1; border-radius: 8px; font-family: monospace; font-size: 15px; resize: vertical; margin: 15px 0; }
-        .controls { display: flex; flex-wrap: wrap; gap: 12px; margin: 25px 0; justify-content: center; }
-        button { background: linear-gradient(to right, #4f46e5, #7c3aed); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 16px; }
-        button:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3); }
-        button:disabled { background: #94a3b8; cursor: not-allowed; transform: none; opacity: 0.8; }
-        button.stop { background: linear-gradient(to right, #ef4444, #b91c1c); }
-        .tabs { display: flex; margin-bottom: 25px; border-bottom: 2px solid #e2e8f0; }
-        .tab { padding: 12px 24px; cursor: pointer; color: #64748b; font-weight: 500; }
-        .tab.active { color: #4f46e5; border-bottom: 3px solid #4f46e5; font-weight: 600; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .error { background: #fee2e2; color: #b91c1c; padding: 16px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ef4444; }
-        .success { background: #dcfce7; color: #15803d; padding: 16px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #22c55e; }
-        .loading { text-align: center; padding: 40px 20px; }
-        .spinner { border: 4px solid #cbd5e1; border-top: 4px solid #4f46e5; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; background: #f1f5f9; color: #1e293b; }
+        .container { background: white; border-radius: 16px; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+        h1 { text-align: center; color: #4338ca; margin-bottom: 8px; font-size: 28px; }
+        .subtitle { text-align: center; color: #64748b; margin-bottom: 25px; font-size: 16px; }
+        .status { background: #0f172a; color: #38bdf8; padding: 16px; border-radius: 10px; font-family: monospace; margin: 20px 0; min-height: 26px; line-height: 1.5; }
+        textarea { width: 100%; height: 180px; padding: 16px; border: 2px solid #cbd5e1; border-radius: 12px; font-family: monospace; font-size: 16px; resize: vertical; margin: 15px 0; background: #f8fafc; }
+        .controls { display: flex; flex-wrap: wrap; gap: 15px; margin: 25px 0; justify-content: center; }
+        button { background: linear-gradient(to right, #4338ca, #5b21b6); color: white; border: none; padding: 14px 28px; border-radius: 12px; font-weight: 600; cursor: pointer; transition: all 0.25s; font-size: 17px; box-shadow: 0 4px 10px rgba(67, 56, 202, 0.25); }
+        button:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(67, 56, 202, 0.35); }
+        button:disabled { background: #94a3b8; cursor: not-allowed; transform: none; opacity: 0.85; box-shadow: none; }
+        button.stop { background: linear-gradient(to right, #dc2626, #b91c1c); }
+        .loading { text-align: center; padding: 50px 20px; }
+        .spinner { border: 5px solid #cbd5e1; border-top: 5px solid #4338ca; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 25px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        #loading-status { font-size: 18px; color: #4f46e5; font-weight: 500; margin-top: 10px; }
-        @media (max-width: 600px) {
-            .controls { flex-direction: column; }
-            button { width: 100%; }
-            .container { padding: 20px; }
-        }
+        #loading-status { font-size: 20px; color: #4338ca; font-weight: 600; margin-top: 15px; }
+        .error { background: #fef2f2; color: #b91c1c; padding: 18px; border-radius: 12px; margin: 20px 0; border-left: 4px solid #ef4444; font-weight: 500; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>FSB4 Speech Synthesizer</h1>
-        <div class="subtitle">Formant synthesis with crossfade blending (runs entirely in-browser)</div>
+        <div class="subtitle">Formant synthesis with crossfade blending • Runs entirely in-browser</div>
         
         <div id="loading-screen" class="loading">
             <div class="spinner"></div>
-            <div id="loading-status">Initializing Pyodide runtime...</div>
-            <div style="color: #64748b; font-size: 14px; margin-top: 10px;">(First load may take 20-45 seconds)</div>
+            <div id="loading-status">Initializing Pyodide...</div>
+            <div style="color: #64748b; font-size: 15px; margin-top: 12px;">(First load: 20-45 seconds • Cached thereafter)</div>
         </div>
         
         <div id="main-app" style="display:none;">
-            <div class="tabs">
-                <div class="tab active" data-tab="editor">Editor</div>
-                <div class="tab" data-tab="reference">Reference</div>
-            </div>
+            <div class="status" id="status-bar">Ready • Enter phonemes below → Click "Render"</div>
             
-            <div class="tab-content active" id="editor-tab">
-                <div class="status" id="status-bar">Ready: Enter phoneme spec below and click "Parse & Render"</div>
-                
-                <label style="font-weight: 600; display: block; margin-bottom: 8px;">Phoneme Spec (PHONEME DUR OVRLP P0):</label>
-                <textarea id="spec-editor" spellcheck="false">SIL  0.190 0.000 0.0
+            <label style="font-weight: 600; display: block; margin-bottom: 10px; font-size: 17px;">Phoneme Spec (PHONEME DUR OVRLP P0):</label>
+            <textarea id="spec-editor" spellcheck="false">SIL  0.190 0.000 0.0
 HH   0.080 0.012 115.0
 EH   0.120 0.025 115.0
 L    0.110 0.015 115.0
 OW   0.180 0.000 105.0
 SIL  0.280 0.000 0.0</textarea>
-                
-                <div class="controls">
-                    <button id="render-btn" onclick="parseAndRender()">🔍 Parse & Render Audio</button>
-                    <button id="play-btn" onclick="togglePlayback()" disabled>▶ Play</button>
-                    <button id="export-btn" onclick="exportWAV()" disabled>💾 Export WAV</button>
-                </div>
-                
-                <div id="message-container"></div>
+            
+            <div class="controls">
+                <button id="render-btn" onclick="renderAudio()">🎨 Render Audio</button>
+                <button id="play-btn" onclick="togglePlayback()" disabled>▶ Play</button>
+                <button id="export-btn" onclick="exportWAV()" disabled>💾 Export WAV</button>
             </div>
             
-            <div class="tab-content" id="reference-tab">
-                <div class="status">
-PHONEME FORMAT (OVRLP = Overlap for crossfading):
-PHONEME DUR(sec) OVRLP(sec) P0(Hz) [P1...]
-
-VOWELS:     AH AE AA AO EH EY IH IY OW UH UW ER
-CONSONANTS: B D G P T K M N NG L R F S SH TH V Z ZH DH W Y HH CH JH
-
-EXAMPLE "hello":
-SIL  0.190 0.000 0.0
-HH   0.080 0.012 115.0
-EH   0.120 0.025 115.0
-L    0.110 0.015 115.0
-OW   0.180 0.000 105.0
-SIL  0.280 0.000 0.0
-
-→ OVRLP creates smooth transitions between phonemes
-→ Vowels: 0.018-0.030s | Consonants: 0.008-0.015s | Final: 0.000s
-                </div>
-            </div>
+            <div id="error-container"></div>
         </div>
     </div>
 
     <script>
         let pyodide = null;
-        let fsbEngine = null;  // Will hold { parse, synthesize, voice, sampleRate }
         let renderedAudio = null;
         let audioContext = null;
         let audioBuffer = null;
         let isPlaying = false;
         let sourceNode = null;
+        const SAMPLE_RATE = 48000;
         
-        // Initialize Pyodide and FSB4 engine
-        async function loadEngine() {
+        // Initialize Pyodide and define Python functions
+        async function initPyodide() {
             try {
-                updateStatus("Loading Pyodide runtime...");
-                document.getElementById('loading-status').textContent = "Downloading Pyodide...";
+                document.getElementById('loading-status').textContent = "Loading Pyodide runtime...";
                 pyodide = await loadPyodide();
                 
                 document.getElementById('loading-status').textContent = "Installing numpy...";
@@ -117,82 +77,42 @@ SIL  0.280 0.000 0.0
                 document.getElementById('loading-status').textContent = "Installing scipy...";
                 await pyodide.loadPackage("scipy");
                 
-                document.getElementById('loading-status').textContent = "Initializing FSB4 synthesis engine...";
+                document.getElementById('loading-status').textContent = "Loading FSB4 engine...";
                 
-                // Load FSB4 engine and return callable interface
-                fsbEngine = await pyodide.runPythonAsync(`
+                // Define Python functions that will be callable from JS
+                await pyodide.runPythonAsync(`
 import numpy as np
 import scipy.signal as sig
-from typing import Dict, List
 
-# ===== FSB4 CORE ENGINE =====
-smp = 48000
-
-BYTE_TO_PHONEME = {
-    0x00: 'SIL', 0x01: 'AH', 0x02: 'AE', 0x03: 'AA', 0x04: 'AO', 0x05: 'EH', 0x06: 'EY',
-    0x07: 'IH', 0x08: 'IY', 0x09: 'OW', 0x0A: 'UH', 0x0B: 'UW', 0x0C: 'ER', 0x0D: 'B',
-    0x0E: 'D', 0x0F: 'G', 0x10: 'P', 0x11: 'T', 0x12: 'K', 0x13: 'M', 0x14: 'N', 0x15: 'NG',
-    0x16: 'L', 0x17: 'R', 0x18: 'F', 0x19: 'S', 0x1A: 'SH', 0x1B: 'TH', 0x1C: 'DH', 0x1D: 'V',
-    0x1E: 'Z', 0x1F: 'ZH', 0x20: 'W', 0x21: 'Y', 0x22: 'HH', 0x23: 'CH', 0x24: 'JH',
-}
-PHONEME_TO_BYTE = {v: k for k, v in BYTE_TO_PHONEME.items()}
+# Minimal FSB4 phoneme set
 VOWELS = {'AH','AE','AA','AO','EH','EY','IH','IY','OW','UH','UW','ER'}
 STOPS = {'P','T','K','B','D','G','CH'}
+BYTE_TO_PHONEME = {i: v for i, v in enumerate([
+    'SIL','AH','AE','AA','AO','EH','EY','IH','IY','OW','UH','UW','ER','B',
+    'D','G','P','T','K','M','N','NG','L','R','F','S','SH','TH','DH','V','Z','ZH','W','Y','HH','CH','JH'
+])}
 
-class DefaultVoice:
-    def __init__(self):
-        self.phonemes = {
-            'AH': {'f1': 700, 'f2': 1100, 'f3': 2400, 'length': 0.14, 'voiced': True},
-            'AE': {'f1': 650, 'f2': 1250, 'f3': 2500, 'length': 0.14, 'voiced': True},
-            'AA': {'f1': 620, 'f2': 1180, 'f3': 2550, 'length': 0.14, 'voiced': True},
-            'AO': {'f1': 550, 'f2': 850, 'f3': 2400, 'length': 0.14, 'voiced': True},
-            'EH': {'f1': 530, 'f2': 1700, 'f3': 2450, 'length': 0.14, 'voiced': True},
-            'EY': {'f1': 400, 'f2': 2100, 'f3': 2800, 'length': 0.14, 'voiced': True},
-            'IH': {'f1': 420, 'f2': 1950, 'f3': 2500, 'length': 0.14, 'voiced': True},
-            'IY': {'f1': 300, 'f2': 2250, 'f3': 3000, 'length': 0.14, 'voiced': True},
-            'OW': {'f1': 450, 'f2': 900, 'f3': 2350, 'length': 0.14, 'voiced': True},
-            'UH': {'f1': 400, 'f2': 650, 'f3': 2400, 'length': 0.14, 'voiced': True},
-            'UW': {'f1': 330, 'f2': 900, 'f3': 2200, 'length': 0.14, 'voiced': True},
-            'ER': {'f1': 480, 'f2': 1180, 'f3': 1650, 'length': 0.14, 'voiced': True},
-            'M':  {'f1': 350, 'f2': 1050, 'f3': 2250, 'length': 0.12, 'voiced': True},
-            'N':  {'f1': 320, 'f2': 1150, 'f3': 2450, 'length': 0.12, 'voiced': True},
-            'NG': {'f1': 280, 'f2': 950, 'f3': 2350, 'length': 0.12, 'voiced': True},
-            'L':  {'f1': 400, 'f2': 1150, 'f3': 2450, 'length': 0.12, 'voiced': True},
-            'R':  {'f1': 450, 'f2': 1250, 'f3': 1500, 'length': 0.12, 'voiced': True},
-            'DH': {'f1': 380, 'f2': 1650, 'f3': 2450, 'length': 0.12, 'voiced': True},
-            'V':  {'f1': 380, 'f2': 1550, 'f3': 2450, 'length': 0.12, 'voiced': True},
-            'Z':  {'f1': 380, 'f2': 1750, 'f3': 2450, 'length': 0.12, 'voiced': True},
-            'ZH': {'f1': 380, 'f2': 1450, 'f3': 2250, 'length': 0.12, 'voiced': True},
-            'W':  {'f1': 350, 'f2': 700, 'f3': 2450, 'length': 0.12, 'voiced': True},
-            'Y':  {'f1': 350, 'f2': 2050, 'f3': 2650, 'length': 0.12, 'voiced': True},
-            'JH': {'f1': 400, 'f2': 1650, 'f3': 2450, 'length': 0.12, 'voiced': True},
-            'B':  {'f1': None, 'f2': None, 'f3': None, 'length': 0.068, 'voiced': False},
-            'D':  {'f1': None, 'f2': None, 'f3': None, 'length': 0.068, 'voiced': False},
-            'G':  {'f1': None, 'f2': None, 'f3': None, 'length': 0.068, 'voiced': False},
-            'P':  {'f1': None, 'f2': None, 'f3': None, 'length': 0.068, 'voiced': False},
-            'T':  {'f1': None, 'f2': None, 'f3': None, 'length': 0.068, 'voiced': False},
-            'K':  {'f1': None, 'f2': None, 'f3': None, 'length': 0.068, 'voiced': False},
-            'F':  {'f1': None, 'f2': None, 'f3': None, 'length': 0.125, 'voiced': False},
-            'S':  {'f1': None, 'f2': None, 'f3': None, 'length': 0.125, 'voiced': False},
-            'SH': {'f1': None, 'f2': None, 'f3': None, 'length': 0.125, 'voiced': False},
-            'TH': {'f1': None, 'f2': None, 'f3': None, 'length': 0.125, 'voiced': False},
-            'HH': {'f1': None, 'f2': None, 'f3': None, 'length': 0.125, 'voiced': False},
-            'CH': {'f1': None, 'f2': None, 'f3': None, 'length': 0.068, 'voiced': False},
-            'SIL': {'f1': 0, 'f2': 0, 'f3': 0, 'length': 0.19, 'voiced': 'silence'},
-        }
-    
-    def get_phoneme_data(self, phoneme):
-        if phoneme.endswith('_FINAL'):
-            base = phoneme.replace('_FINAL', '')
-            data = self.phonemes.get(base, self.phonemes.get('SIL', {})).copy()
-            if base in VOWELS:
-                data['length'] = min(data.get('length', 0.14) * 1.4, 0.35)
-            return data
-        return self.phonemes.get(phoneme, self.phonemes.get('SIL', {}))
+# Minimal voice data
+VOICE_DATA = {
+    'AH': {'f1': 700, 'f2': 1100, 'f3': 2400, 'length': 0.14},
+    'EH': {'f1': 530, 'f2': 1700, 'f3': 2450, 'length': 0.14},
+    'IH': {'f1': 420, 'f2': 1950, 'f3': 2500, 'length': 0.14},
+    'OW': {'f1': 450, 'f2': 900, 'f3': 2350, 'length': 0.14},
+    'L':  {'f1': 400, 'f2': 1150, 'f3': 2450, 'length': 0.12},
+    'HH': {'f1': None, 'f2': None, 'f3': None, 'length': 0.125},
+    'M':  {'f1': 350, 'f2': 1050, 'f3': 2250, 'length': 0.12},
+    'N':  {'f1': 320, 'f2': 1150, 'f3': 2450, 'length': 0.12},
+    'NG': {'f1': 280, 'f2': 950, 'f3': 2350, 'length': 0.12},
+    'R':  {'f1': 450, 'f2': 1250, 'f3': 1500, 'length': 0.12},
+    'SIL':{'f1': 0, 'f2': 0, 'f3': 0, 'length': 0.19},
+}
 
-def parse_phoneme_spec(text, voice):
+def get_phoneme_data(ph):
+    return VOICE_DATA.get(ph, VOICE_DATA['SIL'])
+
+def parse_spec(text):
     specs = []
-    for line in text.splitlines():
+    for line in text.strip().splitlines():
         line = line.strip()
         if not line or line.startswith('#'):
             continue
@@ -200,27 +120,21 @@ def parse_phoneme_spec(text, voice):
         if len(parts) < 4:
             continue
         ph = parts[0].upper()
-        if ph not in PHONEME_TO_BYTE:
+        if ph not in VOICE_DATA:
             continue
         try:
             dur = max(0.01, min(2.0, float(parts[1])))
             overlap = max(0.0, min(0.5, float(parts[2])))
-            pitches = [float(p) for p in parts[3:]]
-            if len(pitches) > 8:
-                pitches = pitches[:8]
-            ph_data = voice.get_phoneme_data(ph)
-            f1 = ph_data.get('f1', 0.0) or 0.0
-            f2 = ph_data.get('f2', 0.0) or 0.0
-            f3 = ph_data.get('f3', 0.0) or 0.0
+            pitch = [float(parts[3])]
+            ph_data = get_phoneme_data(ph)
             specs.append({
                 'phoneme': ph,
                 'duration': dur,
                 'overlap': overlap,
-                'pitch_contour': pitches,
-                'num_pitch_points': len(pitches),
-                'f1': f1,
-                'f2': f2,
-                'f3': f3,
+                'pitch_contour': pitch,
+                'f1': ph_data.get('f1', 0) or 0,
+                'f2': ph_data.get('f2', 0) or 0,
+                'f3': ph_data.get('f3', 0) or 0,
                 'voiced': ph not in {'SIL','B','D','G','P','T','K','F','S','SH','TH','HH','CH'}
             })
         except:
@@ -252,63 +166,49 @@ def synthesize_phoneme(fs, spec):
     pitch = spec['pitch_contour'][0] if spec['pitch_contour'] else 115.0
     voiced = spec['voiced']
     
-    n_samples = int(dur * fs)
+    n = int(dur * fs)
     if ph == 'SIL':
-        return np.zeros(n_samples)
+        return np.zeros(n)
     
-    if ph in STOPS:
-        out = np.zeros(n_samples)
-        closure_end = int(n_samples * 0.82)
-        burst_start = closure_end
-        burst_len = min(200, n_samples - burst_start)
-        if burst_len > 30:
-            burst = np.random.randn(burst_len)
-            if f1 > 50:
-                b1, a1 = stable_resonator(fs, f1, 150)
-                b2, a2 = stable_resonator(fs, f2, 200)
-                burst = sig.lfilter(b1, a1, burst)
-                burst = sig.lfilter(b2, a2, burst)
-            env = np.hanning(burst_len) * 0.6
-            out[burst_start:burst_start+burst_len] = burst * env
-        return out * 0.85
-    
-    if not voiced:
-        noise = np.random.randn(n_samples)
+    if not voiced and ph not in VOWELS:
+        noise = np.random.randn(n)
         b, a = sig.butter(4, 7500/(fs/2), btype='low')
         noise = sig.filtfilt(b, a, noise)
         if f1 > 50:
             noise = apply_formants(fs, noise, f1, f2, f3)
-        output = noise * 0.3
+        out = noise * 0.35
     else:
-        t = np.arange(n_samples) / fs
+        t = np.arange(n) / fs
         glottal = np.sin(2 * np.pi * pitch * t)
         if f1 > 50:
-            output = apply_formants(fs, glottal, f1, f2, f3)
+            out = apply_formants(fs, glottal, f1, f2, f3)
         else:
-            output = glottal * 0.45
+            out = glottal * 0.5
     
-    env = np.ones(n_samples)
-    att = min(0.007, dur * 0.12)
-    rel = min(0.018, dur * 0.28)
+    # Simple envelope
+    env = np.ones(n)
+    att = min(0.008, dur * 0.15)
+    rel = min(0.02, dur * 0.3)
     att_s = int(att * fs)
     rel_s = int(rel * fs)
     if att_s > 0:
         env[:att_s] = np.linspace(0, 1, att_s)
     if rel_s > 0:
-        env[-rel_s:] = np.linspace(1, 0.05, rel_s)
-    output = output * env
-    output = np.tanh(output * 1.15) * 0.93
-    return output * 0.82
+        env[-rel_s:] = np.linspace(1, 0.1, rel_s)
+    out = out * env * 0.85
+    return np.tanh(out * 1.2) * 0.9
 
-def synthesize_from_specs(fs, specs):
+def synthesize(specs):
+    fs = 48000
     if not specs:
         return np.zeros(0)
     
+    # Calculate total duration with overlaps
     total_dur = sum(s['duration'] for s in specs)
     for i in range(len(specs) - 1):
         total_dur -= min(specs[i].get('overlap', 0.0), specs[i]['duration'])
     
-    total_samples = int(total_dur * fs) + 10
+    total_samples = int(total_dur * fs) + 20
     output = np.zeros(total_samples)
     pos = 0
     
@@ -316,9 +216,11 @@ def synthesize_from_specs(fs, specs):
         audio = synthesize_phoneme(fs, spec)
         samples = len(audio)
         
+        # Determine overlap with next phoneme
         overlap = spec.get('overlap', 0.0) if i < len(specs) - 1 else 0.0
         overlap_samples = min(int(overlap * fs), samples - 1, int(spec['duration'] * fs * 0.5))
         
+        # Mix into output buffer (simple additive blending)
         end = pos + samples
         if end > len(output):
             output = np.resize(output, end + 1000)
@@ -326,39 +228,27 @@ def synthesize_from_specs(fs, specs):
         output[pos:end] += audio
         pos += (samples - overlap_samples)
     
+    # Final processing
     actual_len = min(pos, len(output))
     audio = output[:actual_len]
-    audio = np.tanh(audio * 1.25) * 0.94
+    audio = np.tanh(audio * 1.3) * 0.92
     b, a = sig.butter(5, 5000/(fs/2), btype='low')
     audio = sig.filtfilt(b, a, audio)
     return audio
-
-# ===== EXPOSE ENGINE TO JAVASCRIPT =====
-voice = DefaultVoice()
-{
-    'parse': lambda text: parse_phoneme_spec(text, voice),
-    'synthesize': lambda specs: synthesize_from_specs(smp, specs),
-    'sampleRate': smp
-}
-`);
+                `);
                 
                 // Hide loader, show app
                 document.getElementById('loading-screen').style.display = 'none';
                 document.getElementById('main-app').style.display = 'block';
-                updateStatus("✓ FSB4 engine ready! Enter phonemes and click 'Parse & Render'");
-                setupTabs();
+                updateStatus("✓ Ready • Enter phonemes and click 'Render Audio'");
                 
             } catch (error) {
-                console.error("Engine load failed:", error);
-                document.getElementById('loading-status').textContent = "❌ FAILED TO LOAD ENGINE";
-                document.getElementById('loading-status').style.color = '#ef4444';
-                document.querySelector('.spinner').style.borderColor = '#fca5a5';
-                document.querySelector('.spinner').style.borderTopColor = '#ef4444';
-                document.querySelector('.loading').innerHTML += 
-                    `<div class="error" style="margin-top: 20px; padding: 15px;">
-                        <strong>Error:</strong> ${error.message || error.toString()}<br>
-                        <span style="font-size: 14px; color: #64748b;">Check browser console (F12) for details. Try refreshing the page.</span>
-                    </div>`;
+                console.error("Initialization failed:", error);
+                document.getElementById('loading-status').textContent = "❌ FAILED TO LOAD";
+                document.getElementById('loading-status').style.color = '#dc2626';
+                document.querySelector('.spinner').style.borderColor = '#fecaca';
+                document.querySelector('.spinner').style.borderTopColor = '#dc2626';
+                showError(`Initialization error: ${error.message || error.toString()}`);
             }
         }
         
@@ -366,76 +256,68 @@ voice = DefaultVoice()
             document.getElementById('status-bar').textContent = msg;
         }
         
-        function showMessage(type, msg) {
-            const container = document.getElementById('message-container');
-            const div = document.createElement('div');
-            div.className = type; // 'error' or 'success'
-            div.innerHTML = msg;
-            container.appendChild(div);
-            setTimeout(() => div.remove(), 10000);
+        function showError(msg) {
+            const container = document.getElementById('error-container');
+            container.innerHTML = `<div class="error">${msg}</div>`;
+            setTimeout(() => { container.innerHTML = ''; }, 12000);
         }
         
-        function setupTabs() {
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.addEventListener('click', () => {
-                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                    tab.classList.add('active');
-                    document.getElementById(tab.dataset.tab + '-tab').classList.add('active');
-                });
-            });
-        }
-        
-        async function parseAndRender() {
-            if (!fsbEngine) {
-                showMessage('error', 'Engine not ready yet. Please wait for initialization to complete.');
+        async function renderAudio() {
+            if (!pyodide) {
+                showError("Engine still loading. Please wait...");
                 return;
             }
             
-            const editor = document.getElementById('spec-editor');
-            const text = editor.value.trim();
+            const text = document.getElementById('spec-editor').value.trim();
             if (!text) {
-                showMessage('error', 'Please enter phoneme spec text first!');
+                showError("Please enter phoneme spec text first!");
                 return;
             }
             
             try {
-                // Disable button during processing
                 const btn = document.getElementById('render-btn');
                 btn.disabled = true;
                 btn.textContent = '.Rendering...';
                 updateStatus("Parsing phoneme spec...");
                 
-                // Parse spec (Python → JS conversion happens automatically)
-                const specsProxy = await fsbEngine.parse(text);
-                const specs = specsProxy.toJs({ depth: -1 }); // Convert PyProxy to JS object
+                // CRITICAL: Get callable function reference EACH TIME before calling
+                const parseFunc = pyodide.globals.get('parse_spec');
+                const specsProxy = parseFunc(text);  // Call immediately
+                parseFunc.destroy();  // Clean up PyProxy
+                
+                const specs = specsProxy.toJs({ depth: -1 });
+                specsProxy.destroy();
                 
                 if (!specs || specs.length < 2) {
-                    throw new Error("No valid phonemes parsed. Check format: PHONEME DUR OVRLP P0");
+                    throw new Error("No valid phonemes parsed. Format: PHONEME DUR OVRLP P0");
                 }
                 
-                updateStatus(`Synthesizing ${specs.length} phonemes with crossfade blending...`);
+                updateStatus(`Synthesizing ${specs.length} phonemes with crossfade...`);
                 
-                // Synthesize audio
-                const audioProxy = await fsbEngine.synthesize(specsProxy);
-                renderedAudio = audioProxy.toJs(); // Float32Array
+                // Get synthesize function and call immediately
+                const synthFunc = pyodide.globals.get('synthesize');
+                const audioProxy = synthFunc(specsProxy);  // Pass specs back to Python
+                synthFunc.destroy();
+                specsProxy.destroy();
                 
-                // Enable playback controls
+                renderedAudio = audioProxy.toJs();  // Float32Array
+                audioProxy.destroy();
+                
+                // Enable controls
                 document.getElementById('play-btn').disabled = false;
                 document.getElementById('export-btn').disabled = false;
                 
-                const duration = renderedAudio.length / fsbEngine.sampleRate;
-                updateStatus(`✓ Rendered ${duration.toFixed(2)}s audio with crossfade. Click PLAY to hear.`);
-                showMessage('success', `Successfully rendered ${specs.length} phonemes (${duration.toFixed(2)}s)`);
+                const duration = renderedAudio.length / SAMPLE_RATE;
+                updateStatus(`✓ Rendered ${duration.toFixed(2)}s audio • Click PLAY to hear`);
+                btn.textContent = '🎨 Render Audio';
+                btn.disabled = false;
                 
             } catch (error) {
                 console.error("Render error:", error);
-                showMessage('error', `Render failed: ${error.message || error.toString()}`);
-                updateStatus("Render failed - see error above");
-            } finally {
-                const btn = document.getElementById('render-btn');
-                btn.disabled = false;
-                btn.textContent = '🔍 Parse & Render Audio';
+                showError(`Render failed: ${error.message || error.toString()}`);
+                updateStatus("Render failed • See error above");
+                document.getElementById('render-btn').textContent = '🎨 Render Audio';
+                document.getElementById('render-btn').disabled = false;
             }
         }
         
@@ -446,7 +328,7 @@ voice = DefaultVoice()
             }
             
             if (!renderedAudio || renderedAudio.length === 0) {
-                showMessage('error', 'No audio to play. Click "Parse & Render" first!');
+                showError("No audio to play. Click 'Render Audio' first!");
                 return;
             }
             
@@ -467,12 +349,7 @@ voice = DefaultVoice()
                 }
                 
                 // Create audio buffer
-                audioBuffer = audioContext.createBuffer(
-                    1,
-                    renderedAudio.length,
-                    fsbEngine.sampleRate
-                );
-                
+                audioBuffer = audioContext.createBuffer(1, renderedAudio.length, SAMPLE_RATE);
                 const channelData = audioBuffer.getChannelData(0);
                 for (let i = 0; i < renderedAudio.length; i++) {
                     channelData[i] = renderedAudio[i];
@@ -487,7 +364,7 @@ voice = DefaultVoice()
                 isPlaying = true;
                 document.getElementById('play-btn').textContent = '■ Stop';
                 document.getElementById('play-btn').classList.add('stop');
-                updateStatus("Playing rendered audio with crossfade blending...");
+                updateStatus("Playing audio with crossfade blending...");
                 
                 sourceNode.onended = () => {
                     isPlaying = false;
@@ -498,18 +375,14 @@ voice = DefaultVoice()
                 
             } catch (error) {
                 console.error("Playback error:", error);
-                showMessage('error', `Playback failed: ${error.message}`);
+                showError(`Playback failed: ${error.message}`);
                 updateStatus(`Playback error: ${error.message}`);
             }
         }
         
         function stopPlayback() {
             if (sourceNode) {
-                try {
-                    sourceNode.stop();
-                } catch (e) {
-                    // Already stopped
-                }
+                try { sourceNode.stop(); } catch (e) {}
             }
             isPlaying = false;
             document.getElementById('play-btn').textContent = '▶ Play';
@@ -519,12 +392,11 @@ voice = DefaultVoice()
         
         function exportWAV() {
             if (!renderedAudio || renderedAudio.length === 0) {
-                showMessage('error', 'No audio to export. Render audio first!');
+                showError("No audio to export. Render audio first!");
                 return;
             }
             
             try {
-                const sampleRate = fsbEngine.sampleRate;
                 const numSamples = renderedAudio.length;
                 const buffer = new ArrayBuffer(44 + numSamples * 2);
                 const view = new DataView(buffer);
@@ -533,48 +405,41 @@ voice = DefaultVoice()
                 writeString(view, 0, 'RIFF');
                 view.setUint32(4, 36 + numSamples * 2, true);
                 writeString(view, 8, 'WAVE');
-                
-                // fmt sub-chunk
                 writeString(view, 12, 'fmt ');
                 view.setUint32(16, 16, true);
-                view.setUint16(20, 1, true); // PCM
-                view.setUint16(22, 1, true); // Mono
-                view.setUint32(24, sampleRate, true);
-                view.setUint32(28, sampleRate * 2, true); // Byte rate
-                view.setUint16(32, 2, true); // Block align
-                view.setUint16(34, 16, true); // Bits per sample
-                
-                // data sub-chunk
+                view.setUint16(20, 1, true);
+                view.setUint16(22, 1, true);
+                view.setUint32(24, SAMPLE_RATE, true);
+                view.setUint32(28, SAMPLE_RATE * 2, true);
+                view.setUint16(32, 2, true);
+                view.setUint16(34, 16, true);
                 writeString(view, 36, 'data');
                 view.setUint32(40, numSamples * 2, true);
                 
-                // PCM samples (Float32 → Int16)
-                const int16Array = new Int16Array(buffer, 44);
+                // PCM data
+                const int16 = new Int16Array(buffer, 44);
                 for (let i = 0; i < numSamples; i++) {
-                    const s = Math.max(-1, Math.min(1, renderedAudio[i]));
-                    int16Array[i] = s < 0 ? s * 32768 : s * 32767;
+                    const val = Math.max(-1, Math.min(1, renderedAudio[i]));
+                    int16[i] = val < 0 ? val * 32768 : val * 32767;
                 }
                 
-                // Trigger download
+                // Download
                 const blob = new Blob([buffer], { type: 'audio/wav' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `fsb4_${new Date().toISOString().replace(/[:.]/g, '-')}.wav`;
+                a.download = `fsb4_output_${Date.now()}.wav`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
                 
-                const sizeKB = buffer.byteLength / 1024;
-                const duration = numSamples / sampleRate;
-                showMessage('success', `Exported WAV: ${duration.toFixed(2)}s / ${sizeKB.toFixed(1)} KB`);
-                updateStatus(`✓ WAV exported successfully (${duration.toFixed(2)}s)`);
+                const duration = numSamples / SAMPLE_RATE;
+                updateStatus(`✓ Exported ${duration.toFixed(2)}s WAV file`);
                 
             } catch (error) {
                 console.error("Export error:", error);
-                showMessage('error', `Export failed: ${error.message}`);
-                updateStatus(`Export error: ${error.message}`);
+                showError(`Export failed: ${error.message}`);
             }
         }
         
@@ -584,8 +449,8 @@ voice = DefaultVoice()
             }
         }
         
-        // Start engine initialization immediately
-        loadEngine();
+        // Start initialization immediately
+        initPyodide();
     </script>
 </body>
 </html>
