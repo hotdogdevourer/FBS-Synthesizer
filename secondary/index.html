@@ -600,13 +600,13 @@ def save_wav(filename: str, audio: np.ndarray, sr: int = smp):
             document.getElementById("output").innerHTML = "FSB4 loaded successfully!";
         }
         
-        function synthesize() {
+        async function synthesize() {
             const text = document.getElementById("textInput").value;
             const phonemeSpec = document.getElementById("phonemeInput").value;
             const voiceName = document.getElementById("voiceSelect").value;
 
             try {
-                const result = pyodide.runPython(`
+                const result = await pyodide.runPythonAsync(`
                     import io
                     import wave
                     import base64
@@ -639,7 +639,7 @@ def save_wav(filename: str, audio: np.ndarray, sr: int = smp):
                 audio.play();
                 
                 // Update phoneme display
-                const readableSpecs = pyodide.runPython(`
+                const readableSpecs = await pyodide.runPythonAsync(`
                     specs_to_readable(specs)
                 `);
                 document.getElementById("phonemeInput").value = readableSpecs;
@@ -649,8 +649,8 @@ def save_wav(filename: str, audio: np.ndarray, sr: int = smp):
             }
         }
         
-        function savePhonemes() {
-            const specs = pyodide.runPython(`
+        async function savePhonemes() {
+            const specs = await pyodide.runPythonAsync(`
                 import io
                 import base64
                 
@@ -678,17 +678,17 @@ def save_wav(filename: str, audio: np.ndarray, sr: int = smp):
             document.getElementById("fileInput").click();
         }
         
-        function handleFile(event) {
+        async function handleFile(event) {
             const file = event.target.files[0];
             if (!file) return;
             
             const reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = async function(e) {
                 const bytes = new Uint8Array(e.target.result);
                 const base64Data = btoa(String.fromCharCode.apply(null, bytes));
                 
                 try {
-                    const specs = pyodide.runPython(`
+                    const specs = await pyodide.runPythonAsync(`
                         import io
                         import base64
                         
