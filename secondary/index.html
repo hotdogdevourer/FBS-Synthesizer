@@ -256,21 +256,6 @@
         </div>
         
         <div id="word-tab" class="tab-content active">
-            <textarea id="textInput" placeholder="Enter words (e.g., 'hello world robot')">hello world this is a robot voice</textarea>
-            <div class="mode-indicator mode-word">🔤 Word Mode</div>
-        </div>
-        
-        <div id="phoneme-tab" class="tab-content">
-            <textarea id="phonemeInput" placeholder="Enter phonemes separated by spaces (e.g., HH EH L OW SIL W ER L D)">HH EH L OW SIL W ER L D</textarea>
-            <div class="phoneme-guide">
-                <strong>Valid Phonemes (ARPABET):</strong><br>
-                SIL, AH, AE, AA, AO, EH, EY, IH, IY, OW, UH, UW, ER,<br>
-                B, D, G, P, T, K, M, N, NG, L, R, F, S, SH, TH, DH, V, Z, ZH, W, Y, HH, CH, JH<br>
-                <strong>Tip:</strong> Use SIL between words for natural pauses
-            </div>
-        </div>
-        
-        <div id="spec-tab" class="tab-content">
             <div class="sample-rate-control">
                 <div class="sample-rate-header">
                     <span>🎛️ Sample Rate (SMP): <span id="sampleRateValue">97000</span> Hz</span>
@@ -284,6 +269,51 @@
                 </div>
                 <div class="clamp-warning">
                     ⚠️ All pitch values automatically clamped to <strong id="clampDisplay">48000</strong> Hz to prevent aliasing
+                </div>
+            </div>
+            <textarea id="textInput" placeholder="Enter words (e.g., 'hello world robot')">hello world this is a robot voice</textarea>
+            <div class="mode-indicator mode-word">🔤 Word Mode</div>
+        </div>
+        
+        <div id="phoneme-tab" class="tab-content">
+            <div class="sample-rate-control">
+                <div class="sample-rate-header">
+                    <span>🎛️ Sample Rate (SMP): <span id="sampleRateValue2">97000</span> Hz</span>
+                    <span>Nyquist Limit: <strong id="nyquistValue2">48500</strong> Hz</span>
+                </div>
+                <input type="range" id="sampleRateSlider2" class="sample-rate-slider" min="8000" max="192000" step="100" value="97000">
+                <div class="sample-rate-info">
+                    <span>8 kHz</span>
+                    <span>Clamp Limit: <strong id="clampValue2">48000</strong> Hz (Nyquist - 500)</span>
+                    <span>192 kHz</span>
+                </div>
+                <div class="clamp-warning">
+                    ⚠️ All pitch values automatically clamped to <strong id="clampDisplay2">48000</strong> Hz to prevent aliasing
+                </div>
+            </div>
+            <textarea id="phonemeInput" placeholder="Enter phonemes separated by spaces (e.g., HH EH L OW SIL W ER L D)">HH EH L OW SIL W ER L D</textarea>
+            <div class="phoneme-guide">
+                <strong>Valid Phonemes (ARPABET):</strong><br>
+                SIL, AH, AE, AA, AO, EH, EY, IH, IY, OW, UH, UW, ER,<br>
+                B, D, G, P, T, K, M, N, NG, L, R, F, S, SH, TH, DH, V, Z, ZH, W, Y, HH, CH, JH<br>
+                <strong>Tip:</strong> Use SIL between words for natural pauses
+            </div>
+        </div>
+        
+        <div id="spec-tab" class="tab-content">
+            <div class="sample-rate-control">
+                <div class="sample-rate-header">
+                    <span>🎛️ Sample Rate (SMP): <span id="sampleRateValue3">97000</span> Hz</span>
+                    <span>Nyquist Limit: <strong id="nyquistValue3">48500</strong> Hz</span>
+                </div>
+                <input type="range" id="sampleRateSlider3" class="sample-rate-slider" min="8000" max="192000" step="100" value="97000">
+                <div class="sample-rate-info">
+                    <span>8 kHz</span>
+                    <span>Clamp Limit: <strong id="clampValue3">48000</strong> Hz (Nyquist - 500)</span>
+                    <span>192 kHz</span>
+                </div>
+                <div class="clamp-warning">
+                    ⚠️ All pitch values automatically clamped to <strong id="clampDisplay3">48000</strong> Hz to prevent aliasing
                 </div>
             </div>
             <textarea id="specInput" placeholder="Enter spec format: PHON DUR OVERLAP PITCH0 PITCH1..."># PHONEME  DUR    OVRLP  PITCH_CONTOUR
@@ -852,29 +882,62 @@ def synthesize_spec_mode(text: str, sample_rate: int = 97000):
         const textInput = document.getElementById('textInput');
         const phonemeInput = document.getElementById('phonemeInput');
         const specInput = document.getElementById('specInput');
-        const sampleRateSlider = document.getElementById('sampleRateSlider');
-        const sampleRateValue = document.getElementById('sampleRateValue');
-        const nyquistValue = document.getElementById('nyquistValue');
-        const clampValue = document.getElementById('clampValue');
-        const clampDisplay = document.getElementById('clampDisplay');
         
-        // Sample Rate Slider
+        // Sample Rate Sliders for all three modes
+        const sliders = {
+            word: {
+                slider: document.getElementById('sampleRateSlider'),
+                rate: document.getElementById('sampleRateValue'),
+                nyquist: document.getElementById('nyquistValue'),
+                clamp: document.getElementById('clampValue'),
+                display: document.getElementById('clampDisplay')
+            },
+            phoneme: {
+                slider: document.getElementById('sampleRateSlider2'),
+                rate: document.getElementById('sampleRateValue2'),
+                nyquist: document.getElementById('nyquistValue2'),
+                clamp: document.getElementById('clampValue2'),
+                display: document.getElementById('clampDisplay2')
+            },
+            spec: {
+                slider: document.getElementById('sampleRateSlider3'),
+                rate: document.getElementById('sampleRateValue3'),
+                nyquist: document.getElementById('nyquistValue3'),
+                clamp: document.getElementById('clampValue3'),
+                display: document.getElementById('clampDisplay3')
+            }
+        };
+        
+        // Update all sliders synchronously
         function updateSampleRateDisplays(value) {
             currentSampleRate = parseInt(value);
-            sampleRateValue.textContent = currentSampleRate;
-            const nyquist = currentSampleRate / 2;
-            const clampLimit = nyquist - 500;
-            nyquistValue.textContent = Math.round(nyquist);
-            clampValue.textContent = Math.round(clampLimit);
-            clampDisplay.textContent = Math.round(clampLimit);
+            for (const mode in sliders) {
+                const s = sliders[mode];
+                s.rate.textContent = currentSampleRate;
+                const nyquist = currentSampleRate / 2;
+                const clampLimit = nyquist - 500;
+                s.nyquist.textContent = Math.round(nyquist);
+                s.clamp.textContent = Math.round(clampLimit);
+                s.display.textContent = Math.round(clampLimit);
+            }
         }
         
-        if (sampleRateSlider) {
-            sampleRateSlider.addEventListener('input', (e) => {
-                updateSampleRateDisplays(e.target.value);
-            });
-            updateSampleRateDisplays(sampleRateSlider.value);
+        // Sync all sliders together
+        for (const mode in sliders) {
+            const slider = sliders[mode].slider;
+            if (slider) {
+                slider.addEventListener('input', (e) => {
+                    // Update all sliders to match
+                    for (const m in sliders) {
+                        sliders[m].slider.value = e.target.value;
+                    }
+                    updateSampleRateDisplays(e.target.value);
+                });
+            }
         }
+        
+        // Initialize displays
+        updateSampleRateDisplays(97000);
         
         // Tab switching
         document.querySelectorAll('.tab').forEach(tab => {
@@ -950,7 +1013,7 @@ def js_synthesize_spec(text, sample_rate=97000):
             }
             
             let func;
-            let sampleRate = 97000;
+            let sampleRate = currentSampleRate;
             
             switch(mode) {
                 case 'word': 
@@ -961,7 +1024,6 @@ def js_synthesize_spec(text, sample_rate=97000):
                     break;
                 case 'spec': 
                     func = synthesizeSpecFunc;
-                    sampleRate = currentSampleRate;
                     break;
                 default: 
                     return null;
@@ -975,9 +1037,7 @@ def js_synthesize_spec(text, sample_rate=97000):
                 playBtn.disabled = true;
                 pauseBtn.disabled = true;
                 
-                const result = mode === 'spec' 
-                    ? func(text, sampleRate) 
-                    : func(text);
+                const result = func(text, sampleRate);
                 
                 if (!result || result[0] === null) {
                     throw new Error("Synthesis returned null");
@@ -1054,7 +1114,7 @@ def js_synthesize_spec(text, sample_rate=97000):
                 const downloadUrl = URL.createObjectURL(currentWavBlob);
                 const link = document.createElement('a');
                 link.href = downloadUrl;
-                link.download = `${filename}.wav`;
+                link.download = `${filename}_${currentSampleRate}Hz.wav`;
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
