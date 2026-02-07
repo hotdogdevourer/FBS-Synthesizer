@@ -591,7 +591,7 @@ class FormantSynthesizer:
                     f0 = pitch_contour[-1]
                 else:
                     f0 = pitch_contour[idx_floor] * (1 - frac) + pitch_contour[idx_floor + 1] * frac
-            f0 = max(50.0, min(400.0, f0))
+            f0 = max(50.0, min((self.fs / 2) - 500, f0))
             period_samples = self.fs / f0
             pulse_len = int(period_samples * 0.6)
             if pulse_len < 8:
